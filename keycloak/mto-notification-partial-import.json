@@ -88,7 +88,7 @@
     {
       "clientId": "mto-notification-svc",
       "name": "Cuenta de servicio de mto-notification",
-      "description": "Cuenta con la que mto-notification lee los eventos de acceso y de administracion del realm por la Admin API y resuelve las direcciones de una audiencia (client_credentials). Sus roles de realm-management los concede apply-partials.sh: una importacion parcial no asigna roles a cuentas de servicio.",
+      "description": "Cuenta de servicio (client_credentials) con la que mto-notification lee los eventos de acceso y de administracion del realm por la Admin API y resuelve las direcciones de una audiencia. Sus roles de realm-management los concede apply-partials.sh.",
       "enabled": true,
       "publicClient": false,
       "standardFlowEnabled": false,
