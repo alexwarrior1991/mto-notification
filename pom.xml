@@ -33,6 +33,7 @@
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
         <springdoc-openapi.version>3.1.0</springdoc-openapi.version>
         <testcontainers.version>1.21.4</testcontainers.version>
+        <greenmail.version>2.1.14</greenmail.version>
     </properties>
     <dependencies>
         <dependency>
@@ -91,6 +92,17 @@
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+        </dependency>
+        <!-- El canal de correo: los avisos urgentes salen por SMTP (Mailpit en local). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+        <!-- Cache en memoria de las direcciones de una audiencia (5 minutos): el correo no puede
+             preguntar al directorio de Keycloak por cada entrega. -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
         </dependency>
 
         <dependency>
@@ -196,6 +208,19 @@
             <groupId>org.testcontainers</groupId>
             <artifactId>postgresql</artifactId>
             <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Un SMTP de verdad en el test del canal de correo: lo que se comprueba es el mensaje
+             que sale por el cable, no un doble del JavaMailSender. -->
+        <dependency>
+            <groupId>com.icegreen</groupId>
+            <artifactId>greenmail-junit5</artifactId>
+            <version>${greenmail.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

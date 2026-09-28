@@ -1,0 +1,143 @@
+# Las reglas de mto-notification: que merece un aviso, a quien y por que canal.
+#
+# Se validan al arrancar: una clave repetida, un tipo de evento que no esta en el catalogo, una
+# clase de audiencia o un canal desconocidos impiden arrancar. Se sobrescribe por entorno con
+# app.notification.rules-location; las variables de aqui las pisa app.notification.rules.variables.
+#
+# Cada regla:
+#   key        identificador estable (kebab-case); es el rule_key de la notificacion
+#   event      un tipo, una lista o un patron con comodin final (maintenance.order.*)
+#   when       condicion SpEL sobre event, payload y vars (opcional)
+#   severity   la del aviso; sin ella, la del evento
+#   audiences  KIND:clave, con la clave como plantilla (#{...}); una que quede en blanco se omite
+#   channels   inbox y/o email (sin ella, inbox)
+#   title/body/link   plantillas; link es una ruta del backoffice (el correo la hace absoluta)
+#   throttle   un disparo por regla y clave en la ventana (window ISO-8601 o 30m/1h/1d)
+#
+# Lo que se registra sin aviso (access.login, access.logout, las rafagas pequenas...) simplemente
+# no tiene regla.
+
+variables:
+  large-burst-threshold: 50
+  # El cliente con el que mto-users administra el realm: lo que no venga de el es un cambio
+  # hecho fuera de la aplicacion. app.notification.rules.variables lo pisa por entorno.
+  users-service-client-id: mto-users-svc
+
+rules:
+
+  # --- Accesos (Keycloak) ---------------------------------------------------------------------
+
+  - key: access-login-streak
+    event: access.login.streak
+    severity: CRITICAL
+    audiences: [PROFILE:mto-users-admin, PROFILE:mto-ops]
+    channels: [inbox, email]
+    title: "Racha de accesos fallidos: #{payload.value}"
+    body: "#{payload.count} intentos fallidos #{payload.dimension == 'username' ? 'de la cuenta' : 'desde la IP'} #{payload.value} entre #{payload.windowStart} y #{payload.windowEnd}."
+    link: "/actividad/accesos?#{payload.dimension == 'username' ? 'username' : 'ipAddress'}=#{payload.value}"
+    throttle:
+      window: 30m
+      key: "#{payload.dimension}:#{payload.value}"
+
+  - key: access-lockout
+    event: access.lockout
+    severity: CRITICAL
+    audiences: [PROFILE:mto-users-admin, PROFILE:mto-ops]
+    channels: [inbox, email]
+    title: "Cuenta bloqueada: #{event.actorUsername ?: event.subjectId}"
+    body: "Keycloak ha bloqueado la cuenta #{event.actorUsername ?: event.subjectId} #{payload.permanent == true ? 'de forma permanente' : 'temporalmente'} por intentos fallidos."
+    link: "/actividad/accesos?username=#{event.actorUsername}"
+    throttle:
+      window: 10m
+      key: "#{event.actorUsername ?: event.subjectId}"
+
+  - key: access-impersonation
+    event: access.impersonation
+    severity: CRITICAL
+    audiences: [PROFILE:mto-users-admin, PROFILE:mto-ops]
+    channels: [inbox, email]
+    title: "Suplantacion de #{event.actorUsername ?: event.subjectId}"
+    body: "Alguien ha iniciado sesion como #{event.actorUsername ?: event.subjectId} desde la consola de Keycloak (impersonacion)."
+    link: "/actividad/accesos?username=#{event.actorUsername}"
+
+  - key: access-password-reset
+    event: [access.password.reset, access.password.changed]
+    audiences: ["USER:#{event.actorUsername}"]
+    channels: [inbox]
+    title: "Tu contrasena ha cambiado"
+    body: "Se ha #{event.type == 'access.password.reset' ? 'restablecido' : 'cambiado'} la contrasena de tu cuenta. Si no has sido tu, avisa a administracion."
+    link: "/notificaciones"
+
+  # --- Datos maestros (mto-configuration) ---------------------------------------------------------
+
+  - key: configuration-large-burst
+    event: configuration.*
+    when: "event.eventCount >= vars['large-burst-threshold']"
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-ops]
+    channels: [inbox]
+    title: "#{event.eventCount} #{payload.entityName} #{payload.operation == 'created' ? 'dados de alta' : (payload.operation == 'deleted' ? 'dados de baja' : 'modificados')}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{payload.operation == 'created' ? 'creado' : (payload.operation == 'deleted' ? 'borrado' : 'modificado')} #{event.eventCount} #{payload.entityName} en mto-configuration entre #{payload.openedAt} y #{payload.lastEventAt}."
+    link: "/actividad?category=CONFIGURATION&type=#{event.type}"
+
+  - key: configuration-infrastructure-deleted
+    event:
+      - configuration.track.deleted
+      - configuration.station.deleted
+      - configuration.profile.deleted
+      - configuration.disconnector.deleted
+      - configuration.section-insulator.deleted
+    severity: WARNING
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox, email]
+    title: "Baja de #{payload.entityName} #{event.subjectLabel ?: event.subjectId}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha dado de baja #{payload.entityName} #{event.subjectLabel ?: event.subjectId} en mto-configuration. Los activos de mantenimiento que dependan de ello quedan desactivados en origen."
+    link: "/actividad?category=CONFIGURATION&subjectType=#{payload.entityName}&subjectId=#{event.subjectId}"
+
+  - key: configuration-package-created
+    event: configuration.execution-package.created
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-warehouse-admin]
+    channels: [inbox]
+    title: "Nuevo paquete de ejecucion #{event.subjectLabel ?: event.subjectId}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha creado el paquete de ejecucion #{event.subjectLabel ?: event.subjectId}; en el almacen aparece como proyecto EP-#{event.subjectId}."
+    link: "/almacen/proyectos"
+
+  # --- Usuarios: cambios hechos fuera de la aplicacion (Keycloak) --------------------------------
+
+  - key: users-change-outside-application
+    event: users.admin.*
+    when: "payload.clientId != vars['users-service-client-id']"
+    severity: WARNING
+    audiences: [PROFILE:mto-users-admin, PROFILE:mto-ops]
+    channels: [inbox, email]
+    title: "Cambio en el realm fuera de la aplicacion"
+    body: "Un cambio de #{payload.resourceType} (#{payload.operationType} sobre #{payload.resourcePath}) se ha hecho desde el cliente #{payload.clientId}, no desde mto-users."
+    link: "/actividad?category=USERS&type=#{event.type}"
+    throttle:
+      window: 5m
+      key: "#{event.actorId ?: payload.clientId}"
+
+  # --- El propio servicio -------------------------------------------------------------------------
+
+  - key: system-source-stalled
+    event: system.source.stalled
+    severity: WARNING
+    audiences: [PROFILE:mto-ops]
+    channels: [inbox, email]
+    title: "Fuente parada: #{payload.source}"
+    body: "La fuente #{payload.source} lleva sin leerse desde #{payload.lastSuccessAt}: #{payload.error}"
+    link: "/actividad?category=SYSTEM"
+    throttle:
+      window: 1h
+      key: "#{payload.source}"
+
+  - key: system-delivery-dead
+    event: system.delivery.dead
+    severity: WARNING
+    audiences: [PROFILE:mto-ops]
+    channels: [inbox]
+    title: "Entrega agotada por #{payload.channel}"
+    body: "La entrega #{payload.deliveryId} de la notificacion #{payload.notificationId} ha agotado sus #{payload.attempts} intentos: #{payload.error}"
+    link: "/actividad?category=SYSTEM"
+    throttle:
+      window: 1h
+      key: "#{payload.channel}"

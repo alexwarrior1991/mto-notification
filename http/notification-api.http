@@ -5,7 +5,7 @@
 @keycloakUrl = http://auth.mto.local:8082
 @realm = mto
 @clientId = mto-frontend
-@username = notificacion.auditor
+@username = notificacion.responsable
 @password = local
 
 ### Auth - access token (notificacion.lector / .auditor / .responsable, password 'local')
@@ -21,14 +21,91 @@ grant_type=password&client_id={{clientId}}&username={{username}}&password={{pass
 ### Health (no token)
 GET http://{{host}}:{{port}}/actuator/health
 
-### Inbox (fase 2)
-GET {{baseUrl}}/inbox?unread=true&size=20
+### --- Mi bandeja (notification-inbox) -----------------------------------------------------------
+
+### Mis notificaciones, mas reciente primero
+GET {{baseUrl}}/inbox?size=20
 Authorization: Bearer {{accessToken}}
 
-### Activity log (fase 2)
-GET {{baseUrl}}/activity?category=MAINTENANCE&size=20
+### Solo las no leidas, y solo las criticas
+GET {{baseUrl}}/inbox?unread=true&severity=CRITICAL&size=20
 Authorization: Bearer {{accessToken}}
 
-### Access log (fase 2, notification-access-read)
+### El contador de la campana ({count, capped})
+GET {{baseUrl}}/inbox/unread-count
+Authorization: Bearer {{accessToken}}
+
+### Marcar una como leida (404 NTF-404 si no me va dirigida)
+POST {{baseUrl}}/inbox/00000000-0000-0000-0000-000000000000/read
+Authorization: Bearer {{accessToken}}
+
+### Marcar todas como leidas (hasta la mas reciente visible)
+POST {{baseUrl}}/inbox/read-all
+Authorization: Bearer {{accessToken}}
+
+### --- El registro (notification-activity-read) ---------------------------------------------------
+
+### Actividad de configuracion, mas reciente primero
+GET {{baseUrl}}/activity?category=CONFIGURATION&size=20
+Authorization: Bearer {{accessToken}}
+
+### Lo que hizo una persona sobre un tipo de entidad, ordenado por llegada
+GET {{baseUrl}}/activity?actorUsername=config.responsable&subjectType=profile&sort=seq,desc
+Authorization: Bearer {{accessToken}}
+
+### Un evento con su payload
+GET {{baseUrl}}/activity/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+
+### category=ACCESS es 400 VAL-001: los accesos tienen su endpoint
+GET {{baseUrl}}/activity?category=ACCESS
+Authorization: Bearer {{accessToken}}
+
+### --- Los accesos (notification-access-read) -----------------------------------------------------
+
+### Accesos de una persona
 GET {{baseUrl}}/access?username=config.responsable&size=20
 Authorization: Bearer {{accessToken}}
+
+### Fallos, rachas y bloqueos desde una IP
+GET {{baseUrl}}/access?ipAddress=172.18.0.1&outcome=FAILURE
+Authorization: Bearer {{accessToken}}
+
+### --- Administracion (notification-admin) --------------------------------------------------------
+
+### Las reglas cargadas y de donde vienen
+GET {{baseUrl}}/admin/rules
+Authorization: Bearer {{accessToken}}
+
+### Estado de las fuentes: marcas del lector de Keycloak, inbox por fuente, rafagas, entregas
+GET {{baseUrl}}/admin/sources
+Authorization: Bearer {{accessToken}}
+
+### Entregas de correo que fallaron
+GET {{baseUrl}}/admin/deliveries?status=FAILED&channel=email
+Authorization: Bearer {{accessToken}}
+
+### Reintentar una entrega FAILED o SKIPPED (409 DLV-409 en otro estado)
+POST {{baseUrl}}/admin/deliveries/00000000-0000-0000-0000-000000000000/retry
+Authorization: Bearer {{accessToken}}
+
+### Un correo de prueba (202; en local aparece en Mailpit, http://localhost:8025)
+POST {{baseUrl}}/admin/test-email
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{"to": "ops@mto.local"}
+
+### Un aviso manual (201 + Location); 422 NTF-422 con una audiencia o un canal desconocidos
+POST {{baseUrl}}/admin/broadcasts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "Parada programada del sabado",
+  "body": "El backoffice no estara disponible el sabado de 08:00 a 10:00.",
+  "link": "/notificaciones",
+  "severity": "WARNING",
+  "audiences": ["PROFILE:mto-ops", "CLIENT_ROLE:mto-notification-api:notification-inbox"],
+  "channels": ["inbox", "email"]
+}

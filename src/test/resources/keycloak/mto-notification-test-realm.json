@@ -97,6 +97,16 @@
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true
+    },
+    {
+      "clientId": "mto-notification-svc",
+      "name": "mto-notification (service account)",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "mto-notification-svc-secret"
     }
   ],
   "users": [
@@ -198,6 +208,51 @@
           "temporary": false
         }
       ]
+    },
+    {
+      "username": "service-account-mto-notification-svc",
+      "enabled": true,
+      "serviceAccountClientId": "mto-notification-svc",
+      "clientRoles": {
+        "realm-management": [
+          "view-events",
+          "view-users",
+          "query-users",
+          "view-clients",
+          "query-clients",
+          "view-realm"
+        ]
+      }
     }
-  ]
+  ],
+  "eventsEnabled": true,
+  "eventsExpiration": 604800,
+  "eventsListeners": [
+    "jboss-logging"
+  ],
+  "enabledEventTypes": [
+    "LOGIN",
+    "LOGIN_ERROR",
+    "LOGOUT",
+    "LOGOUT_ERROR",
+    "UPDATE_PASSWORD",
+    "RESET_PASSWORD",
+    "SEND_RESET_PASSWORD",
+    "EXECUTE_ACTIONS",
+    "EXECUTE_ACTION_TOKEN",
+    "UPDATE_CREDENTIAL",
+    "REMOVE_CREDENTIAL",
+    "UPDATE_TOTP",
+    "REMOVE_TOTP",
+    "USER_DISABLED_BY_TEMPORARY_LOCKOUT",
+    "USER_DISABLED_BY_PERMANENT_LOCKOUT",
+    "IMPERSONATE",
+    "UPDATE_PROFILE",
+    "UPDATE_EMAIL"
+  ],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
+  "attributes": {
+    "adminEventsExpiration": "604800"
+  }
 }

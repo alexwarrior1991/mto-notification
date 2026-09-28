@@ -27,7 +27,7 @@ Documentación en castellano, código en inglés, commits en castellano.
 ```bash
 ./mvnw compile
 ./mvnw test                                          # sin Docker: los tests con Postgres se saltan
-./mvnw verify                                        # + KeycloakAuthorizationIT (Keycloak 26.1 en Testcontainers; se salta sin Docker)
+./mvnw verify                                        # + KeycloakAuthorizationIT y KeycloakEventsIT (Keycloak 26.1 en Testcontainers; se saltan sin Docker)
 ./mvnw test -Dtest=ApiAuthorizationRulesTest         # una clase
 TEST_DATABASE_URL=jdbc:postgresql://localhost:5432/mto_notification_test \
 TEST_DATABASE_USERNAME=... TEST_DATABASE_PASSWORD=... ./mvnw verify   # sin Docker, con un Postgres a mano
@@ -46,16 +46,35 @@ y `mto-platform` lo publica en 8086. Detrás del gateway el prefijo público es 
 
 Las mismas tres capas que `mto-maintenance` bajo `com.alejandro.mtonotification`:
 
-- `domain/model` — reglas sin framework (tipos de evento, audiencias, casado de reglas).
-- `application` — `dto` (un paquete por recurso; `common/PageResponse`, `error/ApiErrorResponse`),
-  `service` + `service/impl` (impls package-private tras interfaces públicas), `mapper` (MapStruct,
-  **entidad → respuesta solo**), `exception` (`BusinessException` y sus hijas).
+- `domain/model` — reglas sin framework: `ActivityTypes` (el catálogo de tipos; una regla que
+  nombre uno que no existe impide arrancar), `ActivityCategory` (se deriva del tipo),
+  `ActivityEventDraft` (el borrador que se ingiere: valida, descarta la IP fuera de `ACCESS` y pasa
+  el payload por `PayloadSanitizer`), `Actor`, `Subject`, `Audience`/`AudienceKind`
+  (`KIND:clave`), `DeliveryChannels`, `NotificationRule` + `EventTypeMatcher`, `Fingerprints`.
+- `application` — `dto` (un paquete por recurso; `common/PageResponse`, `error/ApiErrorResponse`,
+  `messaging/SourceEnvelope`, `keycloak/*`), `service` + `service/impl` (impls package-private tras
+  interfaces públicas), `mapper` (MapStruct, **entidad → respuesta solo**), `exception`.
+  Las piezas de `service/impl`, en el orden en que pasa un evento: `SourceEventConsumer` (RabbitMQ)
+  o `KeycloakEventsPollerImpl` → `InboxMessageServiceImpl` (`IdempotentSourceEventProcessor`) →
+  `DispatchingSourceEventHandler` → un `ActivitySourceAdapter` por fuente (`MasterDataSourceAdapter`,
+  `KeycloakLoginEventAdapter`, `KeycloakAdminEventAdapter`) → `ActivityIngestorImpl`
+  (`insert ... on conflict do nothing`; si insertó: `RuleEngineImpl` y los `DerivedEventDetector`,
+  hoy `FailedLoginStreakDetector`) → `NotificationFactoryImpl` (notificación, audiencias y una
+  entrega `AUDIENCE` por canal que empuja) → `DeliveryDispatcherImpl` (fuera de transacción:
+  reclama, expande con `KeycloakDirectoryAudienceResolver`, envía por el `DeliveryChannel`, marca
+  a través de `DeliveryRelayServiceImpl`). Aparte: `BurstAggregatorImpl` (ráfagas y su cierre),
+  `YamlRuleRepository` + `RuleExpressionEvaluator` (SpEL de solo lectura), `ThrottleGateImpl`,
+  `SourceCursorServiceImpl`, `InboxQueryServiceImpl`, `ActivityQueryServiceImpl`,
+  `AdminServiceImpl`, `RetentionPurgeImpl`.
 - `infrastructure` — `persistence` (JPA, repositorios con SQL nativo condicional, specifications),
-  `web` (`NotificationApiPaths`, controladores, `GlobalExceptionHandler`), `messaging/rabbitmq`,
-  `keycloak` (el lector de eventos y el directorio, sobre `RestClient`), `mail`.
-- `configuration` — `security` (resource server de Keycloak, las mismas piezas que los hermanos),
-  `web` (`CorrelationIdFilter`), auditoría JPA, OpenAPI y, por fases, RabbitMQ, firma, Keycloak,
-  correo, reglas y planificadores.
+  `web` (`NotificationApiPaths`, controladores, `GlobalExceptionHandler`), `messaging/rabbitmq`
+  (`SourceEventConsumer`, un `@RabbitListener` por fuente), `keycloak` (`RestKeycloakEventsClient`,
+  `RestKeycloakDirectoryClient` sobre `RestClient`, circuito `keycloak`), `mail` (`EmailChannel`).
+- `configuration` — `security` (resource server de Keycloak, las mismas piezas que los hermanos;
+  `CurrentUserService.getAudienceKeys()` da las claves de la bandeja), `web` (`CorrelationIdFilter`),
+  auditoría JPA, OpenAPI, `rabbitmq` (`SourceRabbitProperties`: una fuente por clave), `messaging`
+  (firma), `keycloak` (`KeycloakProperties`, el cliente con la cuenta de servicio, el sondeo),
+  `notification` (`NotificationProperties`), `mail`, `scheduling` (ráfagas, entregas, retención).
 
 ### Seguridad
 
@@ -86,21 +105,54 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
 
 ### Reglas que no se rompen
 
-- **Nunca contraseñas, tokens ni secretos** en el registro: lo que llega de Keycloak y de los
-  eventos pasa por lista blanca antes de guardarse.
-- **Los accesos (`ACCESS`) nunca salen por `/activity`**: tienen su endpoint y su permiso.
-- **La idempotencia es de la base**, no del código: el inbox por `(message_id, source_service)` y el
-  registro por `(source_service, source_event_id)`; nunca leer-y-escribir.
+- **Nunca contraseñas, tokens ni secretos** en el registro: los detalles de Keycloak pasan por la
+  lista blanca de `KeycloakLoginEventAdapter`, la representación de un evento de administración se
+  descarta salvo los nombres de rol, y `PayloadSanitizer` tira cualquier clave que huela a
+  credencial a cualquier profundidad. El JSON crudo solo vive en el inbox (7 días).
+- **Los accesos (`ACCESS`) nunca salen por `/activity`**: tienen su endpoint y su permiso, y la IP
+  solo vive en esa categoría (`CHECK` del esquema y el borrador).
+- **La idempotencia es de la base**, no del código: el inbox por `(message_id, source_service)`, el
+  registro por `(source_service, source_event_id)`, las ráfagas por el índice único parcial de las
+  abiertas, las entregas por audiencia y por destinatario, los frenos por `(rule_key, dimension_key)`
+  y el arrendamiento del lector por recuento de filas; nunca leer-y-escribir. Un derivado lleva una
+  clave calculable (`streak:<dimensión>:<valor>:<inicio de ventana>`, `burst:<id>`) para que dos
+  instancias o dos pasadas no lo dupliquen.
+- **A quién le toca se resuelve al leer, con el token** (`USER:`, `PROFILE:` por cada rol de realm,
+  `CLIENT_ROLE:` por cada rol de cliente); nada se expande al crear. «Marcar todas» va hasta la más
+  reciente visible, no hasta ahora; el recibo gana a la marca.
+- **Las reglas se validan al arrancar** (`YamlRuleRepository`): clave repetida, tipo fuera de
+  `ActivityTypes`, audiencia o canal desconocidos impiden arrancar. Una regla que falla al
+  evaluarse se salta y se registra; las demás siguen. Un tipo nuevo va a `ActivityTypes` antes que
+  a una regla.
+- **Todo el HTTP hacia Keycloak corre fuera de transacción** (el lector: arrendamiento → HTTP →
+  una transacción por evento → avance de la marca; el despachador: reclamar → resolver → enviar →
+  marcar). Keycloak caído solo retrasa el correo y deja la marca donde estaba.
+- **Lo que corre solo se apaga en los tests** (`application-test.yml`: lector, despachador, cierre
+  de ráfagas, purga, correo) y cada test enciende lo que prueba llamándolo. `MtoNotificationApplicationTests`
+  y `KeycloakEventsIT` ponen esas properties a mano porque corren con el perfil por defecto.
 - **El `X-Correlation-Id`** lo pone `CorrelationIdFilter` en el MDC y en cada error; es la referencia
   que ata una línea del registro a la petición que la causó.
 
 ## Tests
 
-Una clase por capa; se añaden métodos, no clases: `SecurityLayerTest`, `ApiAuthorizationRulesTest`
-(controladores sonda con la forma de las rutas reales y `jwt()`), `ApiDocsExposureTest`,
-`KeycloakAuthorizationIT` (Keycloak 26.1 en Testcontainers con
-`src/test/resources/keycloak/mto-notification-test-realm.json`, la misma forma que `keycloak/`),
-`CorrelationIdFilterTest`, `OpenApiDocumentationConfigurationTest`, `GlobalExceptionHandlerTest` y
-`MtoNotificationApplicationTests` (el único `@SpringBootTest`: contexto completo contra un
-PostgreSQL real, sin mocks). `support/PostgreSQLTestContainer` levanta `postgres:17-alpine` o usa
+Una clase por capa; se añaden métodos, no clases: `DomainModelTest`, `RulesConfigurationTest` (el
+YAML real carga; una regla rota impide arrancar), `BusinessLayerTest` (motor, ingesta, detector de
+rachas, datos maestros, adaptadores y lector de Keycloak, despachador y resolutor; con dobles),
+`MessagingLayerTest` (el JSON literal de `mto-configuration`, consumidor, inbox, firma y topología
+con `ApplicationContextRunner`), `KeycloakEventsClientTest` (`MockRestServiceServer`),
+`MailLayerTest` (GreenMail), `MapperLayerTest`, `DtoValidationTest`, `JpaEntityModelTest`,
+`RestControllerLayerTest` (`@WebMvcTest` de los cuatro controladores con la cadena real y
+`jwt()`), `GlobalExceptionHandlerTest`, `SecurityLayerTest`, `ApiAuthorizationRulesTest`
+(controladores sonda), `ApiDocsExposureTest`, `CorrelationIdFilterTest`,
+`OpenApiDocumentationConfigurationTest`; contra PostgreSQL, `InboxMessageRepositoryDataJpaTest`,
+`ActivityRegistryDataJpaTest` (idempotencia, `CHECK`s, rachas, ráfagas con su cierre en carrera,
+frenos, arrendamiento, purga) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
+entregas), los tres `@DataJpaTest` que recogen los servicios package-private con una
+`@TestConfiguration` anidada y `@ComponentScan` por nombre; `MtoNotificationApplicationTests`
+(contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean);
+y en `verify`, `KeycloakAuthorizationIT` y `KeycloakEventsIT` (Keycloak 26.1 en Testcontainers con
+`src/test/resources/keycloak/mto-notification-test-realm.json`, la misma forma que `keycloak/`,
+con los eventos activados y la cuenta de servicio; el segundo hace un acceso, tres fallos y un
+cambio desde la consola y comprueba el registro, la racha, los avisos y que la segunda pasada no
+repite nada). `support/PostgreSQLTestContainer` levanta `postgres:17-alpine` o usa
 `TEST_DATABASE_URL/USERNAME/PASSWORD`; sin ninguna de las dos cosas la clase se omite, no falla.

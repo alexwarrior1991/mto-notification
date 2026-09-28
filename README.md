@@ -18,9 +18,25 @@ La documentación funcional y técnica vive en [`docs/`](docs/README.md).
 
 ## Estado
 
-Fase 1: el esqueleto. Seguridad, contrato de errores, correlación, OpenAPI, imagen, CI y el lado
-del realm están; el modelo, las fuentes, las reglas, la bandeja y el correo llegan en la fase 2
+Fase 2a: el servicio funciona con dos fuentes. El registro (`V1`), el inbox idempotente, los datos
+maestros de `mto-configuration` por su cola propia (con ráfagas: una importación es una línea), el
+lector de eventos de Keycloak (accesos y administración del realm, con rachas de accesos fallidos),
+las reglas en YAML, la bandeja por persona, el correo por Mailpit, la retención y la API de
+administración. Lo que publican los demás servicios llega por fases
 ([`docs/05-development-roadmap.md`](docs/05-development-roadmap.md)).
+
+## Qué hace
+
+1. **Ingiere.** Cada fuente entra por el mismo `inbox_message` (idempotente por mensaje y fuente) y
+   deja **una** línea normalizada en `activity_event` (idempotente por origen e id): tipo
+   `<categoría>.<sujeto>.<evento>`, gravedad, actor, sujeto, correlación y un `payload` por lista
+   blanca. Nunca una contraseña, un token ni un secreto.
+2. **Deriva.** Tres accesos fallidos del mismo usuario o de la misma IP en diez minutos son una
+   racha; mil perfiles modificados por una importación son una ráfaga con `eventCount`.
+3. **Avisa.** Las reglas de `notification-rules.yml` casan el evento, evalúan una condición y
+   crean la notificación con sus audiencias (`USER:`, `PROFILE:`, `CLIENT_ROLE:`) y sus canales.
+4. **Entrega.** La bandeja se resuelve al leer, con el token de la persona. El correo sale por un
+   despachador con reintentos, una entrega por destinatario, y las direcciones las da Keycloak.
 
 ## Requisitos
 
@@ -39,17 +55,25 @@ tienen:
 | `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD` | La base de la aplicación |
 | `KEYCLOAK_ISSUER_URI` | El realm que emite los tokens (`http://auth.mto.local:8082/realms/mto`) |
 | `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_AUDIENCE` | `mto-notification-api` |
-| `KEYCLOAK_SERVICE_CLIENT_SECRET` | Secreto de la cuenta de servicio `mto-notification-svc`, con la que se leen los eventos de Keycloak |
+| `KEYCLOAK_AUTH_SERVER_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_TOKEN_URI` | La Admin API de Keycloak y el endpoint de token de la cuenta de servicio |
+| `KEYCLOAK_SERVICE_CLIENT_SECRET` | Secreto de la cuenta de servicio `mto-notification-svc`, con la que se leen los eventos de Keycloak y las direcciones de una audiencia |
+| `SPRING_MAIL_HOST`, `SPRING_MAIL_PORT` | El SMTP (Mailpit en local: `1025`, bandeja web en `8025`) |
+| `APP_NOTIFICATION_LINK_BASE_URL` | Raíz absoluta de los enlaces del correo: el backoffice |
 | `APP_CORS_ALLOWED_ORIGIN` | Origen de navegador permitido por CORS |
 
-Interruptores: `APP_RABBITMQ_ENABLED=false` arranca sin broker, `APP_SECURITY_EXPOSE_API_DOCS=true`
-publica Swagger sin token.
+Interruptores: `APP_RABBITMQ_ENABLED=false` arranca sin broker, `APP_KEYCLOAK_EVENTS_ENABLED=false`
+no sondea Keycloak (y arranca sin secreto), `APP_NOTIFICATION_EMAIL_ENABLED=false` deja los avisos
+en la bandeja, `APP_NOTIFICATION_DELIVERY_ENABLED`/`_BURST_CLOSE_ENABLED`/`_RETENTION_PURGE_ENABLED`
+apagan el trabajo de fondo en una instancia, `APP_SECURITY_EXPOSE_API_DOCS=true` publica Swagger
+sin token. Las reglas se sobrescriben con `APP_NOTIFICATION_RULES_LOCATION` (`file:/ruta.yml`) y
+sus variables con `app.notification.rules.variables.*`.
 
 ## Perfiles de Spring
 
-`dev` (puerto 8086, Swagger abierto), `test` (el de la suite: broker apagado, validación de
-audiencia apagada) y `prod` (parada ordenada, detalle de health oculto, sin valores por defecto para
-base, broker, Keycloak ni secreto).
+`dev` (puerto 8086, Swagger abierto, secreto de servicio fijo), `test` (broker, lector,
+despachador, cierre de ráfagas, purga y correo apagados: cada test enciende lo que prueba
+llamándolo) y `prod` (parada ordenada, detalle de health oculto, sin valores por defecto para base,
+broker, Keycloak, SMTP, enlace del correo ni secreto).
 
 ## Arrancar en local
 
@@ -63,6 +87,11 @@ export KEYCLOAK_ISSUER_URI=http://auth.mto.local:8082/realms/mto
 export SPRING_RABBITMQ_USERNAME=mto SPRING_RABBITMQ_PASSWORD=mto
 ./mvnw spring-boot:run
 ```
+
+Con eso el lector empieza a sondear Keycloak a los 15 s (la cuenta `mto-notification-svc` con el
+secreto de desarrollo), el consumidor escucha `mto.notification.master-data.queue` y el correo sale
+por el Mailpit de `mto-platform` (http://localhost:8025). `GET /api/v1/notifications/admin/sources`
+con un token de `notificacion.responsable` enseña las marcas avanzando.
 
 `auth.mto.local` tiene que resolver al host (`127.0.0.1 auth.mto.local` en `/etc/hosts`): el `iss`
 del token lleva ese nombre y la aplicación descarga de él el JWK Set.
@@ -79,7 +108,28 @@ docker compose up -d --build
 ## Migraciones
 
 Flyway, `src/main/resources/db/migration`. Hibernate valida el esquema al arrancar, así que cada
-cambio es un `V<n>__*.sql` nuevo. Detalle en [`docs/03-database.md`](docs/03-database.md).
+cambio es un `V<n>__*.sql` nuevo. `V1` crea las diez tablas: el inbox, el registro, las ráfagas,
+las notificaciones con sus audiencias y recibos, la marca de «todas leídas», las entregas, los
+frenos por regla y la marca del lector. Detalle en [`docs/03-database.md`](docs/03-database.md).
+
+## Las fuentes
+
+| Fuente | Cómo llega | Detalle |
+|---|---|---|
+| Datos maestros de `mto-configuration` | Cola propia `mto.notification.master-data.queue` sobre `mto.master-data.exchange`, con DLX/DLQ y firma | Las altas y modificaciones se agregan en ráfagas; las bajas de infraestructura y el alta de un paquete son una línea cada una |
+| Accesos y administración de Keycloak | Sondeo de la Admin API cada 20 s con `mto-notification-svc` (`view-events`), marca de agua por fuente y arrendamiento | Idempotente por huella del evento; tres fallos seguidos son una racha; un cambio hecho desde la consola es «fuera de la aplicación» |
+| `mto-users`, `mto-maintenance`, `mto-stock`, trabajos de `mto-configuration` | Fases siguientes | |
+
+Todo en [`docs/06-messaging.md`](docs/06-messaging.md), reglas incluidas.
+
+## Las reglas
+
+`src/main/resources/notification-rules.yml`: `event` (tipo, lista o `maintenance.order.*`), `when`
+(SpEL sobre `event`, `payload` y `vars`), `severity`, `audiences` (`PROFILE:mto-ops`,
+`USER:#{event.actorUsername}`), `channels` (`inbox`, `email`), `title`/`body`/`link` (plantillas)
+y `throttle`. Se validan al arrancar: un tipo, una audiencia o un canal desconocidos impiden
+arrancar, que es como una errata no se descubre el día que el evento por fin llega.
+`GET /admin/rules` enseña las cargadas.
 
 ## Seguridad
 
@@ -119,9 +169,13 @@ que llega en las cabeceras de RabbitMQ.
 ## Tests
 
 ```bash
-./mvnw test                     # Testcontainers: postgres:17-alpine
-./mvnw verify                   # + KeycloakAuthorizationIT (se salta sin Docker)
+./mvnw test                     # Testcontainers: postgres:17-alpine; GreenMail para el correo
+./mvnw verify                   # + KeycloakAuthorizationIT y KeycloakEventsIT (Keycloak 26.1; se saltan sin Docker)
 ```
+
+`KeycloakEventsIT` es el lector de punta a punta: un Keycloak real con los eventos activados, un
+acceso, tres fallos y un cambio desde la consola, y de ahí el registro, la racha, sus avisos y la
+segunda pasada que no repite nada.
 
 Sin Docker, la suite se apunta a cualquier PostgreSQL:
 

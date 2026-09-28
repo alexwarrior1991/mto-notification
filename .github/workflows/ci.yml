@@ -138,6 +138,13 @@ jobs:
             -e KEYCLOAK_TOKEN_URI=http://localhost:8082/realms/mto/protocol/openid-connect/token \
             -e KEYCLOAK_SERVICE_CLIENT_ID=mto-notification-svc \
             -e KEYCLOAK_SERVICE_CLIENT_SECRET=smoke \
+            -e KEYCLOAK_AUTH_SERVER_URL=http://localhost:8082 \
+            -e KEYCLOAK_REALM=mto \
+            -e APP_NOTIFICATION_LINK_BASE_URL=http://localhost:8085 \
+            -e SPRING_MAIL_HOST=localhost \
+            -e APP_KEYCLOAK_EVENTS_ENABLED=false \
+            -e APP_NOTIFICATION_EMAIL_ENABLED=false \
+            -e APP_NOTIFICATION_DELIVERY_ENABLED=false \
             -e SPRING_RABBITMQ_HOST=localhost \
             -e SPRING_RABBITMQ_USERNAME=smoke \
             -e SPRING_RABBITMQ_PASSWORD=smoke \
