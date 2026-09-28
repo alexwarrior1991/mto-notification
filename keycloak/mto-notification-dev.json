@@ -1,0 +1,67 @@
+{
+  "clients": [
+    {
+      "clientId": "mto-notification-svc",
+      "secret": "mto-notification-svc-secret"
+    }
+  ],
+  "users": [
+    {
+      "username": "notificacion.lector",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Nuria",
+      "lastName": "Lectora",
+      "email": "notificacion.lector@mto.local",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "mto-notification-viewer"
+      ]
+    },
+    {
+      "username": "notificacion.auditor",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Aurora",
+      "lastName": "Auditora",
+      "email": "notificacion.auditor@mto.local",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "mto-notification-auditor"
+      ]
+    },
+    {
+      "username": "notificacion.responsable",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Nicolas",
+      "lastName": "Responsable",
+      "email": "notificacion.responsable@mto.local",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "mto-notification-admin"
+      ]
+    }
+  ]
+}

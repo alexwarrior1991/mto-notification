@@ -1,0 +1,47 @@
+server:
+  port: ${SERVER_PORT:0}
+
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    url: ${TEST_DATABASE_URL:${DATABASE_URL:jdbc:postgresql://localhost:5432/mto_notification_test}}
+    username: ${TEST_DATABASE_USERNAME:${DATABASE_USERNAME:}}
+    password: ${TEST_DATABASE_PASSWORD:${DATABASE_PASSWORD:}}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    locations: ${SPRING_FLYWAY_LOCATIONS:classpath:db/migration}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    show-sql: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8082/realms/mto}
+
+app:
+  security:
+    # Los tests inyectan la autenticacion ya resuelta, asi que no hay emisor que ponga la audiencia
+    # en el token. Se desactiva aqui y no en el codigo para que el interruptor siga siendo
+    # configuracion: KeycloakAuthorizationIT se prueba aparte, con su validador activo.
+    audience-validation-enabled: ${KEYCLOAK_AUDIENCE_VALIDATION_ENABLED:false}
+    expose-api-docs: ${APP_SECURITY_EXPOSE_API_DOCS:true}
+
+  # Los tests no dependen de un broker real: sin estos beans nadie abre una conexion.
+  rabbitmq:
+    enabled: ${APP_RABBITMQ_ENABLED:false}
+
+management:
+  endpoint:
+    health:
+      show-details: ${MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS:always}
+
+logging:
+  level:
+    root: ${LOGGING_LEVEL_ROOT:WARN}
+    com.alejandro.mtonotification: ${LOGGING_LEVEL_APP:INFO}

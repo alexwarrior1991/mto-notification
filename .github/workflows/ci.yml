@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      # GitHub-hosted Ubuntu runners ship with a running Docker daemon, which is what the
+      # Testcontainers-backed tests need to start postgres:17-alpine and Keycloak 26.1.
+      - name: Build and run the test suite
+        run: ./mvnw -B --no-transfer-progress verify
+
+      - name: Upload test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: test-reports
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  image:
+    name: Build image
+    needs: test
+    runs-on: ubuntu-latest
+
+    # The smoke test below needs a real database: Hibernate runs with ddl-auto: validate and the
+    # context does not come up without a connection.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: mto_notification
+          POSTGRES_USER: mto_notification_user
+          POSTGRES_PASSWORD: mto_notification_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mto_notification_user -d mto_notification"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    permissions:
+      contents: read
+      # Only needed to publish. On a pull request from a fork the token is read-only anyway, which
+      # is why the login and the push are conditional below.
+      packages: write
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # The image is built on every pull request too, so a broken Dockerfile shows up before the
+      # merge rather than after it. What stays conditional is publishing.
+      - name: Log in to GHCR
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # A working branch must not publish an image someone could deploy by mistake.
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+          # Without publishing, the image stays in the runner's local daemon: enough to know the
+          # Dockerfile builds and the jar lands where the ENTRYPOINT expects it.
+          load: ${{ github.event_name != 'push' || github.ref != 'refs/heads/master' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Building does not prove the container starts. This service does not run without a database
+      # (Hibernate is ddl-auto: validate), so the smoke test gives it a real PostgreSQL and lets
+      # Flyway run. RabbitMQ and Keycloak stay off: the application is designed to boot without them.
+      #
+      # The container runs with --network host so that localhost means the same thing to it and to
+      # the service container the runner published.
+      - name: Smoke test the image
+        if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/master' }}
+        run: |
+          IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
+          docker run -d --name mto-notification-smoke --network host \
+            -e SPRING_PROFILES_ACTIVE=prod \
+            -e SERVER_PORT=8080 \
+            -e DATABASE_URL=jdbc:postgresql://localhost:5432/mto_notification \
+            -e DATABASE_USERNAME=mto_notification_user \
+            -e DATABASE_PASSWORD=mto_notification_password \
+            -e SPRING_FLYWAY_ENABLED=true \
+            -e APP_RABBITMQ_ENABLED=false \
+            -e MANAGEMENT_HEALTH_RABBIT_ENABLED=false \
+            -e KEYCLOAK_ISSUER_URI=http://localhost:8082/realms/mto \
+            -e KEYCLOAK_CLIENT_ID=mto-notification-api \
+            -e KEYCLOAK_AUDIENCE=mto-notification-api \
+            -e KEYCLOAK_TOKEN_URI=http://localhost:8082/realms/mto/protocol/openid-connect/token \
+            -e KEYCLOAK_SERVICE_CLIENT_ID=mto-notification-svc \
+            -e KEYCLOAK_SERVICE_CLIENT_SECRET=smoke \
+            -e SPRING_RABBITMQ_HOST=localhost \
+            -e SPRING_RABBITMQ_USERNAME=smoke \
+            -e SPRING_RABBITMQ_PASSWORD=smoke \
+            -e APP_CORS_ALLOWED_ORIGIN=http://localhost:4200 \
+            "$IMAGE"
+          for i in $(seq 1 45); do
+            if curl -fsS http://localhost:8080/actuator/health > /dev/null; then
+              echo "The container answers on /actuator/health"
+              docker rm -f mto-notification-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The image did not answer within 90s. Container log:"
+          docker logs mto-notification-smoke
+          docker rm -f mto-notification-smoke
+          exit 1

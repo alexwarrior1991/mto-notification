@@ -1,0 +1,203 @@
+{
+  "realm": "mto",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      {
+        "name": "notification-admin",
+        "description": "Homonimo a proposito de un permiso de cliente: sirve para comprobar que un rol de realm NO concede el permiso del mismo nombre."
+      },
+      {
+        "name": "mto-notification-auditor",
+        "description": "Perfil compuesto: la bandeja, el registro y los accesos.",
+        "composite": true,
+        "composites": {
+          "client": {
+            "mto-notification-api": [
+              "notification-inbox",
+              "notification-activity-read",
+              "notification-access-read"
+            ]
+          }
+        }
+      },
+      {
+        "name": "mto-notification-admin",
+        "description": "Perfil compuesto con los cuatro permisos.",
+        "composite": true,
+        "composites": {
+          "client": {
+            "mto-notification-api": [
+              "notification-inbox",
+              "notification-activity-read",
+              "notification-access-read",
+              "notification-admin"
+            ]
+          }
+        }
+      }
+    ],
+    "client": {
+      "mto-notification-api": [
+        {
+          "name": "notification-inbox"
+        },
+        {
+          "name": "notification-activity-read"
+        },
+        {
+          "name": "notification-access-read"
+        },
+        {
+          "name": "notification-admin"
+        },
+        {
+          "name": "ops-metrics"
+        },
+        {
+          "name": "ops-write"
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "mto-notification-api",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "secret": "no-se-usa-solo-declara-roles-y-audiencia"
+    },
+    {
+      "clientId": "mto-test-frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "audiencia-mto-notification-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "mto-notification-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "mto-test-ajeno",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true
+    }
+  ],
+  "users": [
+    {
+      "username": "lector",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Lucia",
+      "lastName": "Lectora",
+      "email": "lector@mto.local",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "lector",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "mto-notification-api": [
+          "notification-inbox"
+        ]
+      }
+    },
+    {
+      "username": "auditor",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Aurora",
+      "lastName": "Auditora",
+      "email": "auditor@mto.local",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "auditor",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "mto-notification-auditor"
+      ]
+    },
+    {
+      "username": "responsable",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Rosa",
+      "lastName": "Responsable",
+      "email": "responsable@mto.local",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "responsable",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "mto-notification-admin"
+      ]
+    },
+    {
+      "username": "impostor",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Ivan",
+      "lastName": "Impostor",
+      "email": "impostor@mto.local",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "impostor",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "notification-admin"
+      ],
+      "clientRoles": {
+        "mto-notification-api": [
+          "notification-inbox"
+        ]
+      }
+    },
+    {
+      "username": "ajeno",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Ana",
+      "lastName": "Ajena",
+      "email": "ajeno@mto.local",
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "ajeno",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
