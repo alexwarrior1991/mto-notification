@@ -1,0 +1,34 @@
+{
+  "operationId": "a0000000-0000-4000-8000-00000000000f",
+  "referenceId": "asset-20000000-0000-4000-8000-000000000001",
+  "origin": "mto-maintenance",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "MAINTENANCE_ASSET_DISABLED",
+  "data": {
+    "entityName": "asset",
+    "entityId": "20000000-0000-4000-8000-000000000001",
+    "eventName": "disabled",
+    "values": {
+      "code": "PRF-12-2.27",
+      "name": "12-2.27",
+      "type": "PROFILE",
+      "executionPackageId": 6,
+      "trackId": 2,
+      "stationId": null,
+      "startKp": 12847.990,
+      "endKp": 12847.990,
+      "sourceService": "mto-configuration",
+      "sourceEntityId": "4711",
+      "enabledAtSource": true,
+      "disabledLocally": true,
+      "preventiveIntervalDays": 365
+    }
+  },
+  "messageHash": "348481c290d107b16b9059d659ceb17e3855090ba2664e9b3b5eca2166d64cc1",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000032",
+    "username": "mantenimiento.responsable",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

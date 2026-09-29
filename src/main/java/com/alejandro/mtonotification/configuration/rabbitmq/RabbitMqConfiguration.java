@@ -3,6 +3,7 @@ package com.alejandro.mtonotification.configuration.rabbitmq;
 import com.alejandro.mtonotification.application.service.SourceEventProcessor;
 import com.alejandro.mtonotification.configuration.messaging.MessagePayloadSignatureVerifier;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.ConfigurationSourceConsumer;
+import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.MaintenanceSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.MasterDataSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.RabbitListenerContainerFactoryNames;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.SourceRabbitMqNames;
@@ -124,5 +125,12 @@ public class RabbitMqConfiguration {
     public UsersSourceConsumer usersSourceConsumer(SourceEventProcessor processor, MessagePayloadSignatureVerifier signatureVerifier) {
         LOGGER.info("Users events consumer enabled on {}", properties.source(SourceRabbitMqNames.USERS_SOURCE).queue());
         return new UsersSourceConsumer(processor, signatureVerifier);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "app.rabbitmq.sources.maintenance", name = "listener-enabled", havingValue = "true", matchIfMissing = true)
+    public MaintenanceSourceConsumer maintenanceSourceConsumer(SourceEventProcessor processor, MessagePayloadSignatureVerifier signatureVerifier) {
+        LOGGER.info("Maintenance events consumer enabled on {}", properties.source(SourceRabbitMqNames.MAINTENANCE_SOURCE).queue());
+        return new MaintenanceSourceConsumer(processor, signatureVerifier);
     }
 }

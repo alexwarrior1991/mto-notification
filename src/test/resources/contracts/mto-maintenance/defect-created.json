@@ -1,0 +1,44 @@
+{
+  "operationId": "a0000000-0000-4000-8000-000000000004",
+  "referenceId": "defect-60000000-0000-4000-8000-000000000001",
+  "origin": "mto-maintenance",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "MAINTENANCE_DEFECT_CREATED",
+  "data": {
+    "entityName": "defect",
+    "entityId": "60000000-0000-4000-8000-000000000001",
+    "eventName": "created",
+    "values": {
+      "code": "DEF-000045",
+      "severity": "HIGH",
+      "status": "OPEN",
+      "description": "Cracked insulator",
+      "assetId": "20000000-0000-4000-8000-000000000001",
+      "assetCode": "PRF-12-2.27",
+      "assetName": "12-2.27",
+      "assetType": "PROFILE",
+      "executionPackageId": 6,
+      "trackId": 2,
+      "stationId": null,
+      "startKp": 12847.990,
+      "endKp": 12847.990,
+      "inspectionId": "70000000-0000-4000-8000-000000000001",
+      "inspectionCode": "INS-000031",
+      "orderId": null,
+      "orderCode": null,
+      "foundInTaskId": null,
+      "resolvedInShiftCode": null,
+      "detectedAt": "2026-09-28T00:00:00Z",
+      "repairPlannedDate": "2026-10-10",
+      "resolvedAt": null,
+      "comment": "Created from inspection INS-000031"
+    }
+  },
+  "messageHash": "daa824076b10397619bba5cea53c4d2cc3d640d6ef5dc42346538eff4d418b8b",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000031",
+    "username": "mantenimiento.tecnico",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

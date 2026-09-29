@@ -55,7 +55,11 @@ class RulesConfigurationTest {
                 "configuration-infrastructure-deleted", "users-change-outside-application", "system-delivery-dead",
                 "configuration-job-finished", "users-user-created", "users-user-deleted", "users-user-disabled",
                 "users-credential-deleted", "users-sessions-revoked", "users-profile-changed", "users-client-roles-changed",
-                "users-password-reset")));
+                "users-password-reset", "maintenance-order-urgent", "maintenance-order-assigned", "maintenance-order-closed",
+                "maintenance-defect-critical", "maintenance-defect-high", "maintenance-inspection-unsafe", "maintenance-inspection-defect",
+                "maintenance-inspection-corrective-order", "maintenance-shift", "maintenance-material-no-stock",
+                "maintenance-material-rejected", "maintenance-material-stock-unavailable", "maintenance-asset-disabled",
+                "maintenance-preventive-due-soon")));
 
         NotificationRule job = repository.rules().stream().filter(rule -> rule.key().equals("configuration-job-finished")).findFirst().orElseThrow();
         assertEquals(List.of("USER:#{payload.createdBy}"), job.audiences(), "el trabajo avisa a quien lo lanzo");
@@ -63,6 +67,16 @@ class RulesConfigurationTest {
         assertTrue(profiles.audiences().contains("USER_ID:#{payload.targetUserId}"), "la persona afectada, por su id: mto-users no siempre sabe su nombre");
         NotificationRule sessions = repository.rules().stream().filter(rule -> rule.key().equals("users-sessions-revoked")).findFirst().orElseThrow();
         assertEquals(Duration.ofMinutes(5), sessions.throttle().window(), "sacar a una persona son tres llamadas y un aviso");
+
+        NotificationRule urgent = repository.rules().stream().filter(rule -> rule.key().equals("maintenance-order-urgent")).findFirst().orElseThrow();
+        assertEquals(List.of("inbox", "email"), urgent.channels(), "una orden urgente llega al correo");
+        assertTrue(urgent.matcher().matches(ActivityTypes.MAINTENANCE_ORDER_CREATED));
+        NotificationRule assigned = repository.rules().stream().filter(rule -> rule.key().equals("maintenance-order-assigned")).findFirst().orElseThrow();
+        assertEquals(List.of("USER:#{payload.assignedUser}"), assigned.audiences(), "la orden asignada avisa a la persona asignada");
+        assertTrue(assigned.matcher().matches(ActivityTypes.MAINTENANCE_ORDER_REASSIGNED));
+        NotificationRule stockUnavailable = repository.rules().stream().filter(rule -> rule.key().equals("maintenance-material-stock-unavailable")).findFirst().orElseThrow();
+        assertEquals(Duration.ofHours(1), stockUnavailable.throttle().window(), "el almacen caido avisa una vez por orden y hora");
+        assertTrue(stockUnavailable.matcher().matches(ActivityTypes.MAINTENANCE_MATERIAL_IN_DOUBT));
 
         NotificationRule streak = repository.rules().stream().filter(rule -> rule.key().equals("access-login-streak")).findFirst().orElseThrow();
         assertTrue(streak.matcher().matches(ActivityTypes.ACCESS_LOGIN_STREAK));

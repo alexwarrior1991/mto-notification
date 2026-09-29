@@ -20,10 +20,18 @@
   (`ConfigurationSourceAdapter`, `UsersSourceAdapter`) y sus reglas, el correlador que funde el
   evento de Keycloak con el de `mto-users` (`superseded_by`, en cualquier orden de llegada), la
   audiencia `USER_ID` y los ejemplos de cada productor como fixtures de contrato.
+- **Fase 3a** (`mto-maintenance`): el outbox copiado de `mto-configuration`, un evento propio por
+  cada hecho de mantenimiento (`mto.maintenance.<entidad>.<evento>`) con la persona y la
+  correlación, el aviso diario de preventivos a vencer y los perfiles con sus permisos de
+  notificación.
+- **Fase 3b**: la cola de `mto-maintenance`, `MaintenanceSourceAdapter` y sus reglas (orden
+  urgente, asignación a la persona, órdenes cerradas, defectos graves y críticos, inspecciones,
+  turnos, material sin existencias o sin respuesta del almacén, activos desactivados, preventivos
+  a vencer), con los dieciséis ejemplos del productor como fixtures de contrato.
 
 ## Siguiente
 
-- **Fases 3 y 4**: el outbox de `mto-maintenance` y el de `mto-stock`, y sus adaptadores y reglas.
+- **Fase 4**: el outbox de `mto-stock` y su adaptador y sus reglas.
 - **Fase 5** (`mto-backoffice`): la campana con el contador, la bandeja (`notificaciones`) y el
   registro (`actividad`).
 

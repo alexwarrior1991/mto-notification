@@ -1,0 +1,37 @@
+{
+  "operationId": "a0000000-0000-4000-8000-00000000000d",
+  "referenceId": "material-a1000000-0000-4000-8000-000000000001",
+  "origin": "mto-maintenance",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "MAINTENANCE_MATERIAL_FAILED",
+  "data": {
+    "entityName": "material",
+    "entityId": "a1000000-0000-4000-8000-000000000001",
+    "eventName": "failed",
+    "values": {
+      "orderId": "40000000-0000-4000-8000-000000000001",
+      "orderCode": "MO-000123",
+      "orderStatus": "PLANNED",
+      "taskId": null,
+      "materialId": "b0000000-0000-4000-8000-000000000001",
+      "materialCode": "GA70",
+      "materialDescription": "Grapa de atirantado 70",
+      "warehouseId": "c0000000-0000-4000-8000-000000000001",
+      "plannedQuantity": 4,
+      "consumedQuantity": 0,
+      "unit": "ud",
+      "stockReservationId": null,
+      "stockSyncStatus": "FAILED",
+      "request": null,
+      "step": "resolve project",
+      "reason": "mto-stock is unavailable: connection refused"
+    }
+  },
+  "messageHash": "4a2268f677b7e422006d2647eeba90fec3472777643b2d6726d186026f6bc0c8",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000031",
+    "username": "mantenimiento.tecnico",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

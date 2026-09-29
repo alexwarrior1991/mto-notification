@@ -1,0 +1,48 @@
+{
+  "operationId": "a0000000-0000-4000-8000-000000000002",
+  "referenceId": "order-40000000-0000-4000-8000-000000000001",
+  "origin": "mto-maintenance",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "MAINTENANCE_ORDER_STATUS_CHANGED",
+  "data": {
+    "entityName": "order",
+    "entityId": "40000000-0000-4000-8000-000000000001",
+    "eventName": "status-changed",
+    "values": {
+      "code": "MO-000123",
+      "title": "Preventive T2 week 40",
+      "type": "PREVENTIVE",
+      "priority": "MEDIUM",
+      "status": "ASSIGNED",
+      "assetId": "20000000-0000-4000-8000-000000000002",
+      "assetCode": "SEC-T2",
+      "assetName": "Ranana-Herzliya T2",
+      "assetType": "TRACK_SECTION",
+      "executionPackageId": 6,
+      "trackId": 2,
+      "stationId": null,
+      "startKp": 12847.990,
+      "endKp": 14078.090,
+      "plannedDate": "2026-10-06",
+      "actualStartDate": null,
+      "actualEndDate": null,
+      "teamId": "30000000-0000-4000-8000-000000000001",
+      "teamCode": "EQ-1",
+      "teamName": "Equipo noche 1",
+      "assignedUser": "mantenimiento.tecnico",
+      "originInspectionId": null,
+      "originDefectId": null,
+      "stockProjectId": "50000000-0000-4000-8000-000000000001",
+      "from": "PLANNED",
+      "to": "ASSIGNED",
+      "comment": "week 40"
+    }
+  },
+  "messageHash": "92a17a39d1cbe6175b2b775e4298a39c4b67427ba83c09748b17633ae97c33d9",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000032",
+    "username": "mantenimiento.responsable",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

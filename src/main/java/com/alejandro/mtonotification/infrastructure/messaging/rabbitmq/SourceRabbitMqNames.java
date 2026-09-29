@@ -33,6 +33,15 @@ public final class SourceRabbitMqNames {
     public static final String USERS_DEAD_LETTER_QUEUE = USERS_QUEUE + ".dlq";
     public static final String USERS_DEAD_LETTER_ROUTING_KEY = USERS_QUEUE + ".dlq";
 
+    /** Lo que mto-maintenance cuenta de si mismo: ordenes, defectos, inspecciones, turnos, material, activos y preventivos. */
+    public static final String MAINTENANCE_SOURCE = "maintenance";
+    public static final String MAINTENANCE_EXCHANGE = "mto.maintenance.exchange";
+    public static final String MAINTENANCE_ROUTING_PATTERN = "mto.maintenance.#";
+    public static final String MAINTENANCE_QUEUE = "mto.notification.maintenance.queue";
+    public static final String MAINTENANCE_DEAD_LETTER_EXCHANGE = MAINTENANCE_QUEUE + ".dlx";
+    public static final String MAINTENANCE_DEAD_LETTER_QUEUE = MAINTENANCE_QUEUE + ".dlq";
+    public static final String MAINTENANCE_DEAD_LETTER_ROUTING_KEY = MAINTENANCE_QUEUE + ".dlq";
+
     public static final String ARG_DEAD_LETTER_EXCHANGE = "x-dead-letter-exchange";
     public static final String ARG_DEAD_LETTER_ROUTING_KEY = "x-dead-letter-routing-key";
 

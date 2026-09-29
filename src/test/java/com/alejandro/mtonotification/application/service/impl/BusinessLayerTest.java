@@ -88,8 +88,9 @@ import static org.mockito.Mockito.when;
 
 /**
  * Los servicios con dobles: el motor de reglas, la ingesta, los adaptadores de Keycloak, de
- * datos maestros, de los trabajos de configuracion y de mto-users (estos dos con los ejemplos que
- * cada productor versiona), el detector de rachas, el correlador de usuarios, el despachador y el
+ * datos maestros, de los trabajos de configuracion, de mto-users y de mto-maintenance (estos tres
+ * con los ejemplos que cada productor versiona; el ultimo, ademas, con sus reglas reales pasando
+ * por el motor), el detector de rachas, el correlador de usuarios, el despachador y el
  * resolutor de audiencias. Lo que decide la base de datos (idempotencia, rafagas, frenos, la
  * fusion en si) se prueba contra PostgreSQL en los {@code *DataJpaTest}.
  */
@@ -893,6 +894,216 @@ class BusinessLayerTest {
                     "USERS_" + entity.toUpperCase().replace('-', '_') + "_" + event.toUpperCase().replace('-', '_'),
                     Map.of("entityName", entity, "entityId", USER_ID, "eventName", event, "values", values), "hash",
                     new SourceActor("u-admin", "usuarios.responsable", "PERSON"), "req-1");
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Fuente mto-maintenance
+    // ---------------------------------------------------------------------------------------
+
+    @Nested
+    class Maintenance {
+
+        private final ActivityIngestor ingestor = mock(ActivityIngestor.class);
+        private final MaintenanceSourceAdapter adapter = new MaintenanceSourceAdapter(ingestor);
+        private final SourceEventContext context = new SourceEventContext("maintenance", null, "mto.maintenance.order.created");
+
+        @Test
+        void theUrgentOrderExampleBecomesACriticalLineAboutTheOrderWithThePersonWhoOpenedIt() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-maintenance/order-created.json"), context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals(ActivityTypes.MAINTENANCE_ORDER_CREATED, draft.type());
+            assertEquals(ActivitySeverity.CRITICAL, draft.severity(), "una orden URGENT");
+            assertEquals("mto-maintenance", draft.sourceService());
+            assertEquals("a0000000-0000-4000-8000-000000000001", draft.sourceEventId());
+            assertEquals(Instant.parse("2026-09-29T09:00:00Z"), draft.occurredAt());
+            assertEquals(Actor.person("mantenimiento.tecnico", "6f1b1c8e-0000-4000-8000-000000000031"), draft.actor());
+            assertEquals(Subject.of("order", "40000000-0000-4000-8000-000000000002", "MO-000124"), draft.subject());
+            assertEquals("8c3b8c1a-1111-4222-8333-444444444444", draft.correlationId(), "el X-Correlation-Id de la peticion");
+            assertEquals("order", draft.payload().get("entityName"));
+            assertEquals("created", draft.payload().get("eventName"));
+            assertEquals("URGENT", draft.payload().get("type"));
+            assertEquals("PRF-12-2.27", draft.payload().get("assetCode"));
+            assertEquals(6, ((Number) draft.payload().get("executionPackageId")).intValue());
+            assertFalse(draft.payload().containsKey("stationId"), "un valor nulo no se guarda");
+        }
+
+        @Test
+        void theMaterialRejectedExampleIsAWarningWithTheStockCodeAndTheOrderInItsLabel() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-maintenance/material-rejected.json"), context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals(ActivityTypes.MAINTENANCE_MATERIAL_REJECTED, draft.type());
+            assertEquals(ActivitySeverity.WARNING, draft.severity());
+            assertEquals(Subject.of("material", "a1000000-0000-4000-8000-000000000001", "MO-000123 GA70"), draft.subject());
+            assertEquals("STK-001", draft.payload().get("stockErrorCode"), "lo que distingue la falta de existencias de otro rechazo");
+            assertEquals("reserve", draft.payload().get("step"));
+            assertEquals(409, ((Number) draft.payload().get("stockHttpStatus")).intValue());
+        }
+
+        @Test
+        void thePreventiveDueSoonExampleComesFromTheSystemWithTheDateAsSubject() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-maintenance/preventive-due-soon.json"), context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals(ActivityTypes.MAINTENANCE_PREVENTIVE_DUE_SOON, draft.type());
+            assertEquals(ActivitySeverity.WARNING, draft.severity(), "uno ya vencido");
+            assertEquals(Actor.system(), draft.actor(), "el trabajo diario no tiene persona detras");
+            assertNull(draft.correlationId());
+            assertEquals("d1732d1f-eb16-3e1a-8151-6406237ab658", draft.sourceEventId(), "sale de la fecha: el segundo del dia es un duplicado en el inbox");
+            assertEquals(Subject.of("preventive", "2026-09-29", "2 due"), draft.subject());
+            assertEquals(2, ((List<?>) draft.payload().get("assets")).size());
+        }
+
+        @Test
+        void everyExampleOfTheProducerIsRecordedWithTheSeverityOfTheFact() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+            Map<String, ActivitySeverity> expected = new java.util.LinkedHashMap<>();
+            expected.put("order-created", ActivitySeverity.CRITICAL);
+            expected.put("order-status-changed", ActivitySeverity.INFO);
+            expected.put("order-reassigned", ActivitySeverity.INFO);
+            expected.put("defect-created", ActivitySeverity.WARNING);
+            expected.put("defect-status-changed", ActivitySeverity.INFO);
+            expected.put("inspection-created", ActivitySeverity.WARNING);
+            expected.put("inspection-item-failed", ActivitySeverity.WARNING);
+            expected.put("inspection-defect-created", ActivitySeverity.WARNING);
+            expected.put("inspection-corrective-order-created", ActivitySeverity.WARNING);
+            expected.put("shift-started", ActivitySeverity.INFO);
+            expected.put("shift-closed", ActivitySeverity.INFO);
+            expected.put("material-rejected", ActivitySeverity.WARNING);
+            expected.put("material-failed", ActivitySeverity.WARNING);
+            expected.put("material-in-doubt", ActivitySeverity.WARNING);
+            expected.put("asset-disabled", ActivitySeverity.WARNING);
+            expected.put("preventive-due-soon", ActivitySeverity.WARNING);
+
+            expected.keySet().forEach(name -> adapter.handle(fixture("contracts/mto-maintenance/" + name + ".json"), context));
+
+            ArgumentCaptor<ActivityEventDraft> drafts = ArgumentCaptor.forClass(ActivityEventDraft.class);
+            verify(ingestor, times(expected.size())).ingest(drafts.capture());
+            List<ActivityEventDraft> all = drafts.getAllValues();
+            int index = 0;
+            for (Map.Entry<String, ActivitySeverity> entry : expected.entrySet()) {
+                ActivityEventDraft draft = all.get(index++);
+                assertEquals("maintenance." + entry.getKey().replaceFirst("-", "."), draft.type(), entry.getKey());
+                assertTrue(ActivityTypes.isKnown(draft.type()), "los dieciseis estan en el catalogo: " + draft.type());
+                assertEquals(entry.getValue(), draft.severity(), entry.getKey());
+                assertEquals("mto-maintenance", draft.sourceService());
+                assertNotNull(draft.subject().id(), entry.getKey());
+                assertEquals(entry.getKey().replaceFirst("-.*", ""), draft.payload().get("entityName"), entry.getKey());
+            }
+            assertEquals(Actor.system(), all.get(13).actor(), "el reintento automatico de stock no tiene persona");
+            assertEquals(Actor.person("mantenimiento.responsable", "6f1b1c8e-0000-4000-8000-000000000032"), all.get(14).actor());
+        }
+
+        @Test
+        void anEventTheCatalogueDoesNotKnowIsRecordedAnywayAndOneWithoutEntityIsRefused() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(maintenanceEnvelope(Map.of("entityName", "task", "entityId", "t-1", "eventName", "completed",
+                    "values", Map.of("code", "MO-000123", "minutes", 45))), context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals("maintenance.task.completed", draft.type());
+            assertFalse(ActivityTypes.isKnown(draft.type()), "un evento nuevo del productor se registra antes de tener regla");
+            assertEquals(ActivitySeverity.INFO, draft.severity());
+            assertEquals(Subject.of("task", "t-1", "MO-000123"), draft.subject());
+            assertEquals(45, draft.payload().get("minutes"));
+
+            assertThrows(UnprocessableSourceEventException.class,
+                    () -> adapter.handle(maintenanceEnvelope(Map.of("entityId", "t-1", "eventName", "completed")), context));
+        }
+
+        @Test
+        void theShippedMaintenanceRulesTellTheManagerAndTheAssignedPerson() {
+            List<NotificationFactory.NotificationDraft> created = new ArrayList<>();
+            NotificationFactory factory = draft -> {
+                created.add(draft);
+                return Notification.builder().build();
+            };
+            ThrottleGate throttle = mock(ThrottleGate.class);
+            when(throttle.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+            RuleEngineImpl engine = new RuleEngineImpl(new YamlRuleRepository(new ClassPathResource("notification-rules.yml"), Map.of()),
+                    new RuleExpressionEvaluator(), throttle, factory);
+            java.util.function.Function<String, NotificationFactory.NotificationDraft> only = name -> {
+                created.clear();
+                ActivityEventDraft draft = draftOf(name);
+                engine.evaluate(lineOf(draft), draft.payload());
+                assertEquals(1, created.size(), name + " dispara " + created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+                return created.getFirst();
+            };
+
+            NotificationFactory.NotificationDraft urgent = only.apply("order-created");
+            assertEquals("maintenance-order-urgent", urgent.ruleKey());
+            assertEquals(ActivitySeverity.CRITICAL, urgent.severity());
+            assertEquals(List.of(Audience.profile("mto-maintenance-manager")), urgent.audiences());
+            assertEquals(List.of("inbox", "email"), urgent.channels());
+            assertEquals("Orden urgente MO-000124: Broken contact wire at kp 12+848", urgent.title());
+            assertEquals("mantenimiento.tecnico ha abierto la orden urgente MO-000124 sobre PRF-12-2.27 (12-2.27), via 2.", urgent.body());
+            assertEquals("/mantenimiento/ordenes/40000000-0000-4000-8000-000000000002", urgent.link());
+
+            NotificationFactory.NotificationDraft assigned = only.apply("order-status-changed");
+            assertEquals("maintenance-order-assigned", assigned.ruleKey());
+            assertEquals(List.of(Audience.user("mantenimiento.tecnico")), assigned.audiences(), "a la persona asignada, no al responsable");
+            assertEquals(List.of("inbox"), assigned.channels());
+            assertEquals("Orden MO-000123 asignada a ti", assigned.title());
+            assertEquals("/mantenimiento/ordenes/40000000-0000-4000-8000-000000000001", assigned.link());
+
+            NotificationFactory.NotificationDraft noStock = only.apply("material-rejected");
+            assertEquals("maintenance-material-no-stock", noStock.ruleKey(), "STK-001 es falta de existencias: tambien al almacen");
+            assertEquals(List.of(Audience.profile("mto-maintenance-manager"), Audience.profile("mto-warehouse-admin")), noStock.audiences());
+            assertEquals(ActivitySeverity.WARNING, noStock.severity(), "sin gravedad en la regla, la de la linea");
+            assertEquals("Sin existencias de GA70 para la orden MO-000123", noStock.title());
+
+            NotificationFactory.NotificationDraft inDoubt = only.apply("material-in-doubt");
+            assertEquals("maintenance-material-stock-unavailable", inDoubt.ruleKey());
+            verify(throttle).tryAcquire("maintenance-material-stock-unavailable", "40000000-0000-4000-8000-000000000001", Duration.ofHours(1));
+            assertTrue(inDoubt.body().contains("la peticion RESERVATION queda en duda"), inDoubt.body());
+
+            NotificationFactory.NotificationDraft dueSoon = only.apply("preventive-due-soon");
+            assertEquals("maintenance-preventive-due-soon", dueSoon.ruleKey());
+            assertEquals("2 preventivos vencen en 7 dias (1 ya vencidos)", dueSoon.title());
+            assertTrue(dueSoon.body().contains("SEC-T2") && dueSoon.body().contains("PRF-12-2.27"), dueSoon.body());
+            assertEquals(List.of("inbox", "email"), dueSoon.channels());
+            assertEquals("/mantenimiento/activos", dueSoon.link());
+
+            NotificationFactory.NotificationDraft shift = only.apply("shift-closed");
+            assertEquals("maintenance-shift", shift.ruleKey());
+            assertEquals("Turno SH-000077 cerrado", shift.title());
+            assertTrue(shift.body().contains("330 minutos netos"), shift.body());
+
+            for (String silent : List.of("defect-status-changed", "inspection-defect-created", "inspection-item-failed")) {
+                created.clear();
+                ActivityEventDraft draft = draftOf(silent);
+                engine.evaluate(lineOf(draft), draft.payload());
+                assertTrue(created.isEmpty(), silent + " se registra sin aviso");
+            }
+        }
+
+        private ActivityEventDraft draftOf(String name) {
+            ActivityIngestor recorder = mock(ActivityIngestor.class);
+            when(recorder.ingest(any())).thenReturn(Optional.empty());
+            new MaintenanceSourceAdapter(recorder).handle(fixture("contracts/mto-maintenance/" + name + ".json"), context);
+            return ingested(recorder);
+        }
+
+        private ActivityEvent lineOf(ActivityEventDraft draft) {
+            ActivityEvent event = line(draft.sourceService(), draft.type(), draft.actor(), draft.subject().type(), draft.subject().id(), draft.occurredAt());
+            event.setSeverity(draft.severity());
+            event.setSubjectLabel(draft.subject().label());
+            event.setCorrelationId(draft.correlationId());
+            return event;
+        }
+
+        private SourceEnvelope maintenanceEnvelope(Map<String, Object> data) {
+            return new SourceEnvelope(UUID.randomUUID(), "ref", "mto-maintenance", Instant.parse("2026-09-29T09:00:00Z"), "MAINTENANCE_X",
+                    data, "hash", new SourceActor("6f1b1c8e-0000-4000-8000-000000000031", "mantenimiento.tecnico", "PERSON"), "req-1");
         }
     }
 

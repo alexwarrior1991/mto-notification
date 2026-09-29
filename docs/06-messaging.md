@@ -8,7 +8,7 @@
 | Accesos y administración de Keycloak | Admin API, sondeo cada 20 s con marca de agua | Fase 2a |
 | Trabajos de `mto-configuration` (`job.finished`) | `mto.configuration.exchange`, `mto.configuration.#` → `mto.notification.configuration.queue` | Fase 2d |
 | `mto-users` | `mto.users.exchange`, `mto.users.#` → `mto.notification.users.queue` | Fase 2d |
-| `mto-maintenance` | `mto.maintenance.exchange` → `mto.notification.maintenance.queue` | Fase 3 |
+| `mto-maintenance` | `mto.maintenance.exchange`, `mto.maintenance.#` → `mto.notification.maintenance.queue` | Fase 3b |
 | `mto-stock` | `mto.stock.exchange` → `mto.notification.stock.queue` | Fase 4 |
 
 Cada cola lleva su DLX/DLQ (`<cola>.dlx`, `<cola>.dlq`), como las de `mto-stock` y
@@ -27,9 +27,10 @@ El de `mto-configuration` (`README_MESSAGING.md` de ese repositorio): `operation
 y `traceparent`. Los productores nuevos añaden dos claves, `actor{id, username, kind}` y
 `correlationId`; `SourceEnvelope` ya las lee y las tolera ausentes. Solo se añaden claves: el
 contrato es de cada productor y este servicio lee lo que reconoce e ignora lo demás. Los eventos
-propios de un servicio (`mto.configuration.exchange`, `mto.users.exchange`) llevan `data` en la
-forma `DomainEvent` (`entityName`, `entityId`, `eventName`, `values`), y el tipo de la línea sale
-de ahí: `<categoría>.<entityName>.<eventName>`, igual que la clave de enrutado. Un mensaje sin
+propios de un servicio (`mto.configuration.exchange`, `mto.users.exchange`,
+`mto.maintenance.exchange`) llevan `data` en la forma `DomainEvent` (`entityName`, `entityId`,
+`eventName`, `values`), y el tipo de la línea sale de ahí: `<categoría>.<entityName>.<eventName>`,
+igual que la clave de enrutado. Un mensaje sin
 `data`, sin `entityName`, sin `eventName` (los eventos propios) o con una operación que no es
 `CREATED`/`UPDATED`/`DELETED` (los datos maestros) va a la DLQ. Los ejemplos que cada productor
 versiona en su repositorio (`docs/messaging/examples/`) están copiados tal cual en
@@ -84,6 +85,27 @@ perfiles y sesiones no lo sabe, y por eso las reglas avisan a la persona afectad
 `temporaryCredential` se guarda como `temporaryAccess` y el id de una credencial retirada no se
 guarda, porque el saneador del registro tira cualquier clave que suene a credencial. Bajas,
 desactivaciones, contraseñas, credenciales y sesiones son `WARNING`.
+
+### `mto-maintenance`
+
+`MaintenanceSourceAdapter` escucha `mto.maintenance.#` (`docs/06-messaging.md` de `mto-maintenance`,
+*Published events*): lo que ese servicio publica desde su outbox, con la persona que lo hizo y el
+`X-Correlation-Id` de la petición (o el id del mensaje de datos maestros que la provocó), y el
+tipo sale del nombre del evento: `maintenance.order.created/status-changed/reassigned`,
+`maintenance.defect.created/status-changed`, `maintenance.inspection.created/item-failed/defect-created/corrective-order-created`,
+`maintenance.shift.started/closed`, `maintenance.material.rejected/failed/in-doubt`,
+`maintenance.asset.disabled` y `maintenance.preventive.due-soon`. El sujeto es la entidad con su
+código de etiqueta (`order`/`MO-000123`, `defect`/`DEF-000045`, `inspection`, `shift`, `asset`; la
+línea de material, por su orden y su material; los preventivos, por su fecha). Del `values` se
+guarda todo: es el contrato del productor, que ya lo publica por lista blanca y rechaza cualquier
+clave que huela a secreto, y el saneador del registro vuelve a pasarlo, así que una clave nueva
+allí no exige nada aquí. La gravedad es la del hecho: una orden urgente, un defecto crítico y una
+inspección insegura son `CRITICAL`; un defecto grave, una inspección con defecto mayor, un punto
+en `DEFECT`, una orden cancelada, un material que el almacén rechaza o no contesta, un activo
+desactivado y unos preventivos ya vencidos son `WARNING`. El aviso diario de preventivos llega con
+actor `SYSTEM` y sin correlación, y su `operationId` sale de la fecha: el segundo del mismo día es
+un duplicado en el inbox. Un evento de ese exchange que este servicio aún no conoce se registra
+igualmente con su tipo y sus valores.
 
 ### El correlador de usuarios
 
@@ -177,11 +199,26 @@ credencial. El actor es `SERVICE` cuando el cliente resuelto es `mto-users-svc`
 | `users-profile-changed`, `users-client-roles-changed` | perfiles y roles de cliente | `mto-users-admin` y la persona (`USER_ID`) | bandeja |
 | `users-password-reset` | `users.user.password-reset` | la persona (`USER_ID`) | bandeja |
 | `users-change-outside-application` | `users.admin.*` con `payload.clientId != vars['users-service-client-id']` | `mto-users-admin`, `mto-ops` | bandeja, correo; freno 5 min por actor |
+| `maintenance-order-urgent` | `maintenance.order.created` con `type == URGENT` | `mto-maintenance-manager` | bandeja, correo; `CRITICAL` |
+| `maintenance-order-assigned` | `maintenance.order.status-changed` con `to == ASSIGNED`, y `maintenance.order.reassigned` | la persona asignada (`USER:#{payload.assignedUser}`) | bandeja |
+| `maintenance-order-closed` | `maintenance.order.status-changed` con `to` `COMPLETED` o `CANCELLED` | `mto-maintenance-manager` | bandeja |
+| `maintenance-defect-critical`, `maintenance-defect-high` | `maintenance.defect.created` con `severity` `CRITICAL` / `HIGH` | `mto-maintenance-manager` | bandeja y correo el crítico; bandeja el grave |
+| `maintenance-inspection-unsafe`, `maintenance-inspection-defect` | `maintenance.inspection.created` con `result` `UNSAFE` / `MAJOR_DEFECT` o `MINOR_DEFECT` | `mto-maintenance-manager` | bandeja y correo la insegura; bandeja las otras |
+| `maintenance-inspection-corrective-order` | `maintenance.inspection.corrective-order-created` | `mto-maintenance-manager` | bandeja |
+| `maintenance-shift` | `maintenance.shift.started`, `maintenance.shift.closed` | `mto-maintenance-manager` | bandeja |
+| `maintenance-material-no-stock` | `maintenance.material.rejected` con `stockErrorCode == STK-001` | `mto-maintenance-manager`, `mto-warehouse-admin` | bandeja |
+| `maintenance-material-rejected` | `maintenance.material.rejected` con otro código | `mto-maintenance-manager` | bandeja |
+| `maintenance-material-stock-unavailable` | `maintenance.material.failed`, `maintenance.material.in-doubt` | `mto-maintenance-manager` | bandeja; freno 1 h por orden |
+| `maintenance-asset-disabled` | `maintenance.asset.disabled` | `mto-maintenance-manager` | bandeja |
+| `maintenance-preventive-due-soon` | `maintenance.preventive.due-soon` (uno al día) | `mto-maintenance-manager` | bandeja, correo |
 | `system-source-stalled`, `system-delivery-dead` | los eventos del propio servicio | `mto-ops` | bandeja, correo |
 
 Registro sin aviso: `access.login`, `access.logout`, las ráfagas pequeñas, `users.user.updated`,
-`users.user.enabled`, `users.user.actions-email-sent`, y los eventos de administración de Keycloak
-de un cambio hecho desde `mto-users` (fundidos con el de `mto-users`, que es el que avisa).
+`users.user.enabled`, `users.user.actions-email-sent`, los eventos de administración de Keycloak
+de un cambio hecho desde `mto-users` (fundidos con el de `mto-users`, que es el que avisa), y de
+mantenimiento las transiciones ordinarias de una orden (planificar, iniciar), los defectos leves o
+medios y sus transiciones, las inspecciones `OK`, un punto de checklist en `DEFECT` y el defecto
+que genera una inspección (`maintenance.inspection.defect-created`: el propio defecto ya avisa).
 
 ## Correo
 

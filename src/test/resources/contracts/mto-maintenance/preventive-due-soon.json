@@ -1,0 +1,50 @@
+{
+  "operationId": "d1732d1f-eb16-3e1a-8151-6406237ab658",
+  "referenceId": "preventive-2026-09-29",
+  "origin": "mto-maintenance",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "MAINTENANCE_PREVENTIVE_DUE_SOON",
+  "data": {
+    "entityName": "preventive",
+    "entityId": "2026-09-29",
+    "eventName": "due-soon",
+    "values": {
+      "date": "2026-09-29",
+      "horizonDays": 7,
+      "count": 2,
+      "overdueCount": 1,
+      "sampleSize": 20,
+      "assets": [
+        {
+          "assetId": "20000000-0000-4000-8000-000000000002",
+          "assetCode": "SEC-T2",
+          "assetName": "Ranana-Herzliya T2",
+          "assetType": "TRACK_SECTION",
+          "trackId": 2,
+          "executionPackageId": 6,
+          "lastPreventiveCompletedAt": "2025-09-27T00:00:00Z",
+          "dueAt": "2026-09-27T00:00:00Z",
+          "overdue": true
+        },
+        {
+          "assetId": "20000000-0000-4000-8000-000000000001",
+          "assetCode": "PRF-12-2.27",
+          "assetName": "12-2.27",
+          "assetType": "PROFILE",
+          "trackId": 2,
+          "executionPackageId": 6,
+          "lastPreventiveCompletedAt": "2025-10-01T00:00:00Z",
+          "dueAt": "2026-10-01T00:00:00Z",
+          "overdue": false
+        }
+      ]
+    }
+  },
+  "messageHash": "7d1b9955b96fe19c1e91b41253be09e4d3540dae26a6a3b9c5154ff094b84ae3",
+  "actor": {
+    "id": null,
+    "username": null,
+    "kind": "SYSTEM"
+  },
+  "correlationId": null
+}
