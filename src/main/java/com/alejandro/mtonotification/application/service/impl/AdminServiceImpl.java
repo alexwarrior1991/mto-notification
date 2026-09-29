@@ -168,7 +168,7 @@ class AdminServiceImpl implements AdminService {
     public NotificationResponse broadcast(BroadcastRequest request) {
         List<Audience> audiences = new ArrayList<>(new LinkedHashSet<>(request.audiences().stream()
                 .map(key -> Audience.parse(key).orElseThrow(() -> new UnprocessableException("Notification",
-                        "Audience '" + key + "' is not <KIND>:<key> with a known kind (USER, PROFILE, CLIENT_ROLE)")))
+                        "Audience '" + key + "' is not <KIND>:<key> with a known kind (USER, USER_ID, PROFILE, CLIENT_ROLE)")))
                 .toList()));
         List<String> channels = request.channels() == null || request.channels().isEmpty()
                 ? List.of(DeliveryChannels.INBOX)

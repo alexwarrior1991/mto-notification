@@ -23,7 +23,7 @@ evento dejan una sola línea, y `seq` es el orden de llegada.
 | `ipAddress` | Solo en `ACCESS`; el `CHECK` del esquema lo garantiza y el borrador la descarta antes |
 | `eventCount` | Más de uno en una ráfaga agregada |
 | `payload` | Un subconjunto normalizado por lista blanca (`PayloadSanitizer`): nunca una clave que contenga `password`, `secret`, `token`, `credential`, `otp`, `authorization`, `cookie` o `apikey`, a cualquier profundidad |
-| `supersededBy` | Reservado para fundir el evento de Keycloak con el de `mto-users` (fase 2d) |
+| `supersededBy` | El evento de `mto-users` que deja obsoleto a este evento de administración de Keycloak: el mismo cambio, contado con la persona (`UsersChangeCorrelator`). Las consultas lo esconden salvo `includeSuperseded=true` |
 
 El vocabulario completo, por fuente, está en [`06-messaging.md`](06-messaging.md).
 
@@ -37,6 +37,11 @@ El vocabulario completo, por fuente, está en [`06-messaging.md`](06-messaging.m
   disparar, y dos instancias tampoco.
 - **Ráfaga de datos maestros** (`configuration.<entidad>.<created|updated>` con `eventCount`): ver
   abajo.
+- **Fusión de un cambio de usuarios** (no es un evento nuevo, es una marca): `UsersChangeCorrelator`
+  corre tras ingerir cada línea `USERS` y, si el evento de administración de Keycloak y el de
+  `mto-users` cuentan el mismo cambio (mismo usuario o misma sesión, acción equivalente, a menos de
+  `app.notification.users.correlation-window`), marca el de Keycloak con `superseded_by`, llegue el
+  que llegue primero. Detalle y tabla de equivalencias en [`06-messaging.md`](06-messaging.md).
 - **Fuente parada** (`system.source.stalled`) cuando el lector de Keycloak lleva más de diez
   intervalos sin una pasada buena, y **entrega muerta** (`system.delivery.dead`) cuando un correo
   agota sus intentos.
@@ -74,7 +79,9 @@ como `vars['nombre']`.
 ## Notificación, audiencia y bandeja
 
 Una notificación nace de una regla (o de un aviso manual, `manual-broadcast`) y lleva una o varias
-audiencias: `USER:<usuario>`, `PROFILE:<rol de realm>`, `CLIENT_ROLE:<cliente>:<rol>`; `TEAM` y
+audiencias: `USER:<usuario>`, `USER_ID:<id de Keycloak>` (para lo que una fuente solo sabe decir
+por id: `mto-users` no siempre sabe el nombre del usuario objetivo), `PROFILE:<rol de realm>`,
+`CLIENT_ROLE:<cliente>:<rol>`; `TEAM` y
 `ZONE` quedan reservados para `mto-field`. **A quién le toca se resuelve al leer, con el token**
 (`CurrentUserService.getAudienceKeys()`: la persona, cada rol de `realm_access` y cada rol de
 `resource_access`), sin expandir miembros al crearla. Leída o no leída es un estado por persona

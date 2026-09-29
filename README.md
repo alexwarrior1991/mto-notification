@@ -18,11 +18,14 @@ La documentación funcional y técnica vive en [`docs/`](docs/README.md).
 
 ## Estado
 
-Fase 2a: el servicio funciona con dos fuentes. El registro (`V1`), el inbox idempotente, los datos
-maestros de `mto-configuration` por su cola propia (con ráfagas: una importación es una línea), el
-lector de eventos de Keycloak (accesos y administración del realm, con rachas de accesos fallidos),
-las reglas en YAML, la bandeja por persona, el correo por Mailpit, la retención y la API de
-administración. Lo que publican los demás servicios llega por fases
+Fases 2a a 2d: el servicio funciona con cuatro fuentes. El registro (`V1`), el inbox idempotente,
+los datos maestros de `mto-configuration` por su cola propia (con ráfagas: una importación es una
+línea), los trabajos de `mto-configuration` (`job.finished`, un aviso a quien lo lanzó), las
+acciones administrativas de `mto-users` con la persona que las hizo, el lector de eventos de
+Keycloak (accesos y administración del realm, con rachas de accesos fallidos) y el correlador que
+funde el evento de Keycloak con el de `mto-users` del mismo cambio, las reglas en YAML, la bandeja
+por persona, el correo por Mailpit, la retención y la API de administración. Lo que publican
+`mto-maintenance` y `mto-stock` llega en las fases 3 y 4
 ([`docs/05-development-roadmap.md`](docs/05-development-roadmap.md)).
 
 ## Qué hace
@@ -32,9 +35,12 @@ administración. Lo que publican los demás servicios llega por fases
    `<categoría>.<sujeto>.<evento>`, gravedad, actor, sujeto, correlación y un `payload` por lista
    blanca. Nunca una contraseña, un token ni un secreto.
 2. **Deriva.** Tres accesos fallidos del mismo usuario o de la misma IP en diez minutos son una
-   racha; mil perfiles modificados por una importación son una ráfaga con `eventCount`.
+   racha; mil perfiles modificados por una importación son una ráfaga con `eventCount`; un cambio
+   hecho desde `mto-users` se registra una vez, con nombre, y el evento de Keycloak del mismo
+   cambio queda fundido con él (`supersededBy`).
 3. **Avisa.** Las reglas de `notification-rules.yml` casan el evento, evalúan una condición y
-   crean la notificación con sus audiencias (`USER:`, `PROFILE:`, `CLIENT_ROLE:`) y sus canales.
+   crean la notificación con sus audiencias (`USER:`, `USER_ID:`, `PROFILE:`, `CLIENT_ROLE:`) y
+   sus canales.
 4. **Entrega.** La bandeja se resuelve al leer, con el token de la persona. El correo sale por un
    despachador con reintentos, una entrega por destinatario, y las direcciones las da Keycloak.
 
@@ -117,8 +123,10 @@ frenos por regla y la marca del lector. Detalle en [`docs/03-database.md`](docs/
 | Fuente | Cómo llega | Detalle |
 |---|---|---|
 | Datos maestros de `mto-configuration` | Cola propia `mto.notification.master-data.queue` sobre `mto.master-data.exchange`, con DLX/DLQ y firma | Las altas y modificaciones se agregan en ráfagas; las bajas de infraestructura y el alta de un paquete son una línea cada una |
+| Trabajos de `mto-configuration` | Cola propia `mto.notification.configuration.queue` sobre `mto.configuration.exchange` (`mto.configuration.#`) | `job.finished`: una línea por trabajo con sus recuentos y un aviso a quien lo lanzó; `WARNING` si acabó mal |
+| `mto-users` | Cola propia `mto.notification.users.queue` sobre `mto.users.exchange` (`mto.users.#`) | Una línea por acción administrativa con la persona; el evento de administración de Keycloak del mismo cambio se funde con ella |
 | Accesos y administración de Keycloak | Sondeo de la Admin API cada 20 s con `mto-notification-svc` (`view-events`), marca de agua por fuente y arrendamiento | Idempotente por huella del evento; tres fallos seguidos son una racha; un cambio hecho desde la consola es «fuera de la aplicación» |
-| `mto-users`, `mto-maintenance`, `mto-stock`, trabajos de `mto-configuration` | Fases siguientes | |
+| `mto-maintenance`, `mto-stock` | Fases 3 y 4 | |
 
 Todo en [`docs/06-messaging.md`](docs/06-messaging.md), reglas incluidas.
 
@@ -126,7 +134,8 @@ Todo en [`docs/06-messaging.md`](docs/06-messaging.md), reglas incluidas.
 
 `src/main/resources/notification-rules.yml`: `event` (tipo, lista o `maintenance.order.*`), `when`
 (SpEL sobre `event`, `payload` y `vars`), `severity`, `audiences` (`PROFILE:mto-ops`,
-`USER:#{event.actorUsername}`), `channels` (`inbox`, `email`), `title`/`body`/`link` (plantillas)
+`USER:#{event.actorUsername}`, `USER_ID:#{payload.targetUserId}`), `channels` (`inbox`, `email`),
+`title`/`body`/`link` (plantillas)
 y `throttle`. Se validan al arrancar: un tipo, una audiencia o un canal desconocidos impiden
 arrancar, que es como una errata no se descubre el día que el evento por fin llega.
 `GET /admin/rules` enseña las cargadas.

@@ -205,8 +205,8 @@ app:
   rabbitmq:
     enabled: ${APP_RABBITMQ_ENABLED:true}
     # Una fuente por emisor: su exchange y su routing key son contrato del emisor; la cola, su
-    # DLX y su DLQ son de este servicio, que es quien consume. Las fuentes de mto-configuration
-    # (trabajos), mto-maintenance, mto-stock y mto-users se anaden con su fase.
+    # DLX y su DLQ son de este servicio, que es quien consume. Las fuentes de mto-maintenance y
+    # mto-stock se anaden con su fase.
     sources:
       master-data:
         exchange: ${APP_RABBITMQ_MASTER_DATA_EXCHANGE:mto.master-data.exchange}
@@ -216,6 +216,26 @@ app:
         dead-letter-queue: ${APP_RABBITMQ_MASTER_DATA_DEAD_LETTER_QUEUE:mto.notification.master-data.queue.dlq}
         dead-letter-routing-key: ${APP_RABBITMQ_MASTER_DATA_DEAD_LETTER_ROUTING_KEY:mto.notification.master-data.queue.dlq}
         listener-enabled: ${APP_RABBITMQ_MASTER_DATA_LISTENER_ENABLED:true}
+      # Lo que mto-configuration cuenta de si mismo: el final de un trabajo en segundo plano. Va por
+      # su propio exchange para que quien escucha los datos maestros no lo reciba.
+      configuration:
+        exchange: ${APP_RABBITMQ_CONFIGURATION_EXCHANGE:mto.configuration.exchange}
+        routing-key: "${APP_RABBITMQ_CONFIGURATION_ROUTING_KEY:mto.configuration.#}"
+        queue: ${APP_RABBITMQ_CONFIGURATION_QUEUE:mto.notification.configuration.queue}
+        dead-letter-exchange: ${APP_RABBITMQ_CONFIGURATION_DEAD_LETTER_EXCHANGE:mto.notification.configuration.queue.dlx}
+        dead-letter-queue: ${APP_RABBITMQ_CONFIGURATION_DEAD_LETTER_QUEUE:mto.notification.configuration.queue.dlq}
+        dead-letter-routing-key: ${APP_RABBITMQ_CONFIGURATION_DEAD_LETTER_ROUTING_KEY:mto.notification.configuration.queue.dlq}
+        listener-enabled: ${APP_RABBITMQ_CONFIGURATION_LISTENER_ENABLED:true}
+      # Las acciones administrativas de mto-users, con la persona que las hizo: lo que los eventos
+      # de administracion de Keycloak no saben decir.
+      users:
+        exchange: ${APP_RABBITMQ_USERS_EXCHANGE:mto.users.exchange}
+        routing-key: "${APP_RABBITMQ_USERS_ROUTING_KEY:mto.users.#}"
+        queue: ${APP_RABBITMQ_USERS_QUEUE:mto.notification.users.queue}
+        dead-letter-exchange: ${APP_RABBITMQ_USERS_DEAD_LETTER_EXCHANGE:mto.notification.users.queue.dlx}
+        dead-letter-queue: ${APP_RABBITMQ_USERS_DEAD_LETTER_QUEUE:mto.notification.users.queue.dlq}
+        dead-letter-routing-key: ${APP_RABBITMQ_USERS_DEAD_LETTER_ROUTING_KEY:mto.notification.users.queue.dlq}
+        listener-enabled: ${APP_RABBITMQ_USERS_LISTENER_ENABLED:true}
 
   # La Admin API de Keycloak: el lector de eventos de acceso y de administracion, y el directorio
   # con el que se resuelven las direcciones de una audiencia. Todo con la cuenta de servicio
@@ -271,6 +291,11 @@ app:
         # Tres fallos del mismo usuario o de la misma IP en diez minutos: UN aviso.
         threshold: ${APP_NOTIFICATION_STREAK_THRESHOLD:3}
         window: ${APP_NOTIFICATION_STREAK_WINDOW:PT10M}
+    users:
+      # Un cambio hecho desde mto-users llega dos veces: por su evento (con la persona) y por el de
+      # administracion de Keycloak (con la cuenta de servicio). El correlador funde los que caen a
+      # menos de esto uno del otro, en cualquier orden de llegada.
+      correlation-window: ${APP_NOTIFICATION_USERS_CORRELATION_WINDOW:PT2M}
     burst:
       # Una rafaga se cierra a los 30 s sin eventos nuevos, o a los 10 minutos de abrirse.
       idle-timeout: ${APP_NOTIFICATION_BURST_IDLE_TIMEOUT:PT30S}

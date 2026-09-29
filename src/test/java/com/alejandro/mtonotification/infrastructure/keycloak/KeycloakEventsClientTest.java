@@ -101,6 +101,18 @@ class KeycloakEventsClientTest {
     }
 
     @Test
+    void theDirectoryFindsAUserByIdAndADeletedOneIsEmpty() {
+        server.expect(requestTo(BASE + "/users/u1"))
+                .andRespond(withSuccess("""
+                        {"id":"u1","username":"alice","email":"alice@mto.local","enabled":true}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE + "/users/gone")).andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertEquals("alice", directoryClient.findUserById("u1").orElseThrow().username());
+        assertTrue(directoryClient.findUserById("gone").isEmpty(), "una cuenta borrada ya no tiene direccion");
+    }
+
+    @Test
     void aMissingRoleHasNoMembersAndAServerErrorIsUnavailable() {
         server.expect(requestTo(BASE + "/roles/mto-nadie/users?first=0&max=200")).andRespond(withStatus(HttpStatus.NOT_FOUND));
         server.expect(requestTo(BASE + "/clients?clientId=mto-stock-api")).andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));

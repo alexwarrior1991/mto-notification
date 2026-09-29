@@ -52,7 +52,17 @@ class RulesConfigurationTest {
         YamlRuleRepository repository = new YamlRuleRepository(REAL_RULES, Map.of());
         List<String> keys = repository.rules().stream().map(NotificationRule::key).toList();
         assertTrue(keys.containsAll(List.of("access-login-streak", "access-lockout", "configuration-large-burst",
-                "configuration-infrastructure-deleted", "users-change-outside-application", "system-delivery-dead")));
+                "configuration-infrastructure-deleted", "users-change-outside-application", "system-delivery-dead",
+                "configuration-job-finished", "users-user-created", "users-user-deleted", "users-user-disabled",
+                "users-credential-deleted", "users-sessions-revoked", "users-profile-changed", "users-client-roles-changed",
+                "users-password-reset")));
+
+        NotificationRule job = repository.rules().stream().filter(rule -> rule.key().equals("configuration-job-finished")).findFirst().orElseThrow();
+        assertEquals(List.of("USER:#{payload.createdBy}"), job.audiences(), "el trabajo avisa a quien lo lanzo");
+        NotificationRule profiles = repository.rules().stream().filter(rule -> rule.key().equals("users-profile-changed")).findFirst().orElseThrow();
+        assertTrue(profiles.audiences().contains("USER_ID:#{payload.targetUserId}"), "la persona afectada, por su id: mto-users no siempre sabe su nombre");
+        NotificationRule sessions = repository.rules().stream().filter(rule -> rule.key().equals("users-sessions-revoked")).findFirst().orElseThrow();
+        assertEquals(Duration.ofMinutes(5), sessions.throttle().window(), "sacar a una persona son tres llamadas y un aviso");
 
         NotificationRule streak = repository.rules().stream().filter(rule -> rule.key().equals("access-login-streak")).findFirst().orElseThrow();
         assertTrue(streak.matcher().matches(ActivityTypes.ACCESS_LOGIN_STREAK));

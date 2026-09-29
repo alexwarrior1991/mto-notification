@@ -40,6 +40,7 @@ import com.alejandro.mtonotification.domain.model.ActorKind;
 import com.alejandro.mtonotification.domain.model.Audience;
 import com.alejandro.mtonotification.domain.model.EventTypeMatcher;
 import com.alejandro.mtonotification.domain.model.NotificationRule;
+import com.alejandro.mtonotification.domain.model.Subject;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.ActivityEvent;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.Delivery;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.DeliveryScope;
@@ -50,16 +51,21 @@ import com.alejandro.mtonotification.infrastructure.persistence.repository.Activ
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.InetAddress;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -77,20 +83,58 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * Los servicios con dobles: el motor de reglas, la ingesta, los adaptadores de Keycloak y de
- * datos maestros, el detector de rachas, el despachador y el resolutor de audiencias. Lo que
- * decide la base de datos (idempotencia, rafagas, frenos) se prueba contra PostgreSQL en los
- * {@code *DataJpaTest}.
+ * Los servicios con dobles: el motor de reglas, la ingesta, los adaptadores de Keycloak, de
+ * datos maestros, de los trabajos de configuracion y de mto-users (estos dos con los ejemplos que
+ * cada productor versiona), el detector de rachas, el correlador de usuarios, el despachador y el
+ * resolutor de audiencias. Lo que decide la base de datos (idempotencia, rafagas, frenos, la
+ * fusion en si) se prueba contra PostgreSQL en los {@code *DataJpaTest}.
  */
 class BusinessLayerTest {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
+    static final String USER_ID = "8d1f6d33-8c9e-4c0d-9f5b-2b1c0f3a4e21";
+
+    /** Un ejemplo de {@code src/test/resources/contracts}, copiado del repositorio del productor, leido como lo lee el consumidor. */
+    static SourceEnvelope fixture(String path) {
+        try {
+            return JSON.readValue(new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8), SourceEnvelope.class);
+        } catch (IOException missing) {
+            throw new UncheckedIOException(missing);
+        }
+    }
+
+    static ActivityEventDraft ingested(ActivityIngestor ingestor) {
+        ArgumentCaptor<ActivityEventDraft> captor = ArgumentCaptor.forClass(ActivityEventDraft.class);
+        verify(ingestor).ingest(captor.capture());
+        return captor.getValue();
+    }
+
+    static ActivityEvent line(String source, String type, Actor actor, String subjectType, String subjectId, Instant at) {
+        ActivityEvent event = new TestEvent();
+        ReflectionTestUtils.setField(event, "id", UUID.randomUUID());
+        event.setSourceService(source);
+        event.setSourceEventId(UUID.randomUUID().toString());
+        event.setType(type);
+        event.setCategory(ActivityCategory.ofType(type));
+        event.setSeverity(ActivitySeverity.INFO);
+        event.setOccurredAt(at);
+        event.setRecordedAt(at);
+        event.setActorKind(actor.kind());
+        event.setActorUsername(actor.username());
+        event.setActorId(actor.id());
+        event.setSubjectType(subjectType);
+        event.setSubjectId(subjectId);
+        event.setEventCount(1);
+        event.setPayload("{}");
+        return event;
+    }
 
     static NotificationProperties properties() {
-        return new NotificationProperties("classpath:notification-rules.yml", null, null, null, null, null, null, null);
+        return new NotificationProperties("classpath:notification-rules.yml", null, null, null, null, null, null, null, null);
     }
 
     static KeycloakProperties keycloakProperties() {
@@ -676,6 +720,17 @@ class BusinessLayerTest {
         }
 
         @Test
+        void aUserIdAudienceIsResolvedByTheDirectoryAndADisabledAccountGetsNothing() {
+            KeycloakDirectoryClient directory = mock(KeycloakDirectoryClient.class);
+            when(directory.findUserById("u-9")).thenReturn(Optional.of(new KeycloakUser("u-9", "carol", "carol@mto.local", true, null, null)));
+            when(directory.findUserById("u-off")).thenReturn(Optional.of(new KeycloakUser("u-off", "off", "off@mto.local", false, null, null)));
+            KeycloakDirectoryAudienceResolver audienceResolver = new KeycloakDirectoryAudienceResolver(directory, keycloakProperties());
+
+            assertEquals(List.of(new Recipient("carol", "carol@mto.local")), audienceResolver.resolve(Audience.userId("u-9")));
+            assertTrue(audienceResolver.resolve(Audience.userId("u-off")).isEmpty());
+        }
+
+        @Test
         void aUserWithoutEmailIsARecipientWithoutAddressAndAnOutageIsNotCached() {
             KeycloakDirectoryClient directory = mock(KeycloakDirectoryClient.class);
             when(directory.findUserByUsername("alice")).thenReturn(Optional.of(new KeycloakUser("1", "alice", null, true, null, null)));
@@ -686,6 +741,225 @@ class BusinessLayerTest {
             assertEquals(List.of(new Recipient("alice", null)), audienceResolver.resolve(Audience.user("alice")));
             assertThrows(DirectoryUnavailableException.class, () -> audienceResolver.resolve(Audience.profile("mto-ops")));
             assertEquals(1, audienceResolver.resolve(Audience.profile("mto-ops")).size());
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Trabajos de mto-configuration
+    // ---------------------------------------------------------------------------------------
+
+    @Nested
+    class ConfigurationJobs {
+
+        private final ActivityIngestor ingestor = mock(ActivityIngestor.class);
+        private final ConfigurationSourceAdapter adapter = new ConfigurationSourceAdapter(ingestor);
+        private final SourceEventContext context = new SourceEventContext("configuration", null, "mto.configuration.job.finished");
+
+        @Test
+        void theJobFinishedExampleOfConfigurationBecomesOneLineForWhoLaunchedIt() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-configuration/job-finished.json"), context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals(ActivityTypes.CONFIGURATION_JOB_FINISHED, draft.type());
+            assertEquals(ActivitySeverity.WARNING, draft.severity(), "COMPLETED_WITH_ERRORS es un aviso, no una noticia");
+            assertEquals("mto-configuration", draft.sourceService());
+            assertEquals("b2c9e4d1-5a6f-4e7b-8c9d-0a1b2c3d4e5f", draft.sourceEventId());
+            assertEquals(Instant.parse("2026-09-29T07:00:09Z"), draft.occurredAt(), "cuando termino, no cuando se escribio el sobre");
+            assertEquals(Actor.person("config.responsable", "6f1b1c8e-0000-4000-8000-000000000002"), draft.actor());
+            assertEquals(Subject.of("job", "00000000-0000-4000-8000-0000000000aa", "LOV_IMPORT"), draft.subject());
+            assertEquals("00000000-0000-4000-8000-0000000000aa", draft.correlationId());
+            assertEquals("COMPLETED_WITH_ERRORS", draft.payload().get("status"));
+            assertEquals(118, draft.payload().get("successfulItems"));
+            assertEquals(2, draft.payload().get("failedItems"));
+            assertEquals("config.responsable", draft.payload().get("createdBy"));
+            assertFalse(draft.payload().containsKey("trackId"), "lo nulo no se guarda");
+        }
+
+        @Test
+        void aCompletedJobIsInfoAndWithoutActorInTheEnvelopeTheLauncherIsTheActor() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+            SourceEnvelope envelope = new SourceEnvelope(UUID.randomUUID(), "job-j-1", "mto-configuration", Instant.parse("2026-09-28T10:00:00Z"),
+                    "CONFIGURATION_JOB_FINISHED", Map.of("entityName", "job", "entityId", "j-1", "eventName", "finished",
+                            "values", Map.of("jobId", "j-1", "type", "PROFILE_IMPORT", "status", "COMPLETED", "createdBy", "config.editor",
+                                    "finishedAt", "not-a-date", "totalItems", 3)), "hash", null, null);
+
+            adapter.handle(envelope, context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals(ActivitySeverity.INFO, draft.severity());
+            assertEquals(Actor.person("config.editor", null), draft.actor());
+            assertEquals(Instant.parse("2026-09-28T10:00:00Z"), draft.occurredAt(), "una fecha ilegible cae en la del sobre");
+            assertEquals("j-1", draft.correlationId(), "sin correlacion en el sobre, el trabajo es la correlacion");
+        }
+
+        @Test
+        void anEventOfConfigurationWithoutAdapterIsRecordedWithItsTypeAndWithoutValuesAndAnIncompleteOneIsPermanent() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+            SourceEnvelope unknown = new SourceEnvelope(UUID.randomUUID(), "x", "mto-configuration", Instant.now(), "CONFIGURATION_TRACK_RENUMBERED",
+                    Map.of("entityName", "track", "entityId", "7", "eventName", "Renumbered", "values", Map.of("secretPlan", "x", "code", "V7")),
+                    "hash", new SourceActor("u1", "config.editor", "PERSON"), "req-1");
+
+            adapter.handle(unknown, context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals("configuration.track.renumbered", draft.type());
+            assertEquals(Map.of("entityName", "track", "entityId", "7", "eventName", "renumbered"), draft.payload(), "sin valores: nadie los ha revisado");
+            assertEquals(Subject.of("track", "7"), draft.subject());
+
+            SourceEnvelope nameless = new SourceEnvelope(UUID.randomUUID(), "x", "mto-configuration", Instant.now(), "X",
+                    Map.of("entityName", "job", "values", Map.of()), null, null, null);
+            assertThrows(UnprocessableSourceEventException.class, () -> adapter.handle(nameless, context));
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // mto-users: sus acciones y el correlador con los eventos de Keycloak
+    // ---------------------------------------------------------------------------------------
+
+    @Nested
+    class Users {
+
+        private final ActivityIngestor ingestor = mock(ActivityIngestor.class);
+        private final UsersSourceAdapter adapter = new UsersSourceAdapter(ingestor);
+        private final SourceEventContext context = new SourceEventContext("users", null, "mto.users.user.created");
+
+        @Test
+        void theUserCreatedExampleOfUsersBecomesALineAboutTheTargetUserWithThePersonWhoDidIt() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-users/user-created.json"), context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals(ActivityTypes.USERS_USER_CREATED, draft.type());
+            assertEquals(ActivitySeverity.INFO, draft.severity());
+            assertEquals("mto-users", draft.sourceService());
+            assertEquals("7c2e6a10-1b2c-4d3e-8f90-0a1b2c3d4e5f", draft.sourceEventId());
+            assertEquals(Instant.parse("2026-09-29T09:00:00Z"), draft.occurredAt());
+            assertEquals(Actor.person("usuarios.responsable", "6f1b1c8e-0000-4000-8000-000000000002"), draft.actor());
+            assertEquals(Subject.of("user", "2f1c9d1e-0000-4000-8000-000000000001", "ana.nueva"), draft.subject());
+            assertEquals("8c3b8c1a-1111-4222-8333-444444444444", draft.correlationId());
+            assertEquals("ana.nueva", draft.payload().get("targetUsername"));
+            assertEquals(true, draft.payload().get("enabled"));
+            assertEquals(true, draft.payload().get("temporaryAccess"), "lo que mto-users llama temporaryCredential, con un nombre que el saneador deja pasar");
+            assertEquals(List.of("UPDATE_PASSWORD"), draft.payload().get("requiredActions"));
+            assertFalse(draft.payload().containsKey("temporaryCredential"));
+        }
+
+        @Test
+        void theProfileAssignedExampleKnowsTheUserOnlyByIdAndKeepsTheProfile() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-users/profile-assigned.json"), context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals(ActivityTypes.USERS_PROFILE_ASSIGNED, draft.type());
+            assertEquals(Subject.of("user", "2f1c9d1e-0000-4000-8000-000000000001", null), draft.subject());
+            assertEquals("mto-users-viewer", draft.payload().get("profile"));
+            assertFalse(draft.payload().containsKey("targetUsername"), "mto-users no lo sabe: la regla avisa por USER_ID");
+            assertEquals("2f1c9d1e-0000-4000-8000-000000000001", draft.payload().get("targetUserId"));
+        }
+
+        @Test
+        void takingSomebodyOutIsWarningsWithTheSessionAndTheReservedNamespaceIsRefused() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(usersEnvelope("session", "revoked", Map.of("session", "sess-1")), context);
+            adapter.handle(usersEnvelope("user", "deleted", Map.of("targetUsername", "ana.baja")), context);
+            adapter.handle(usersEnvelope("client-roles", "added", Map.of("client", "mto-stock-api", "roles", List.of("stock-read"))), context);
+
+            ArgumentCaptor<ActivityEventDraft> drafts = ArgumentCaptor.forClass(ActivityEventDraft.class);
+            verify(ingestor, times(3)).ingest(drafts.capture());
+            ActivityEventDraft session = drafts.getAllValues().get(0);
+            assertEquals(ActivityTypes.USERS_SESSION_REVOKED, session.type());
+            assertEquals(ActivitySeverity.WARNING, session.severity());
+            assertEquals("sess-1", session.payload().get("session"), "la sesion es lo que casa con la linea de Keycloak");
+            assertEquals(ActivitySeverity.WARNING, drafts.getAllValues().get(1).severity());
+            assertEquals("ana.baja", drafts.getAllValues().get(1).subject().label());
+            assertEquals(ActivityTypes.USERS_CLIENT_ROLES_ADDED, drafts.getAllValues().get(2).type());
+            assertEquals(ActivitySeverity.INFO, drafts.getAllValues().get(2).severity());
+            assertEquals(List.of("stock-read"), drafts.getAllValues().get(2).payload().get("roles"));
+
+            assertThrows(UnprocessableSourceEventException.class,
+                    () -> adapter.handle(usersEnvelope("admin", "user-updated", Map.of()), context));
+        }
+
+        private SourceEnvelope usersEnvelope(String entity, String event, Map<String, Object> detail) {
+            Map<String, Object> values = new java.util.LinkedHashMap<>();
+            values.put("targetUserId", USER_ID);
+            values.putAll(detail);
+            return new SourceEnvelope(UUID.randomUUID(), "user-" + USER_ID, "mto-users", Instant.parse("2026-09-28T10:00:00Z"),
+                    "USERS_" + entity.toUpperCase().replace('-', '_') + "_" + event.toUpperCase().replace('-', '_'),
+                    Map.of("entityName", entity, "entityId", USER_ID, "eventName", event, "values", values), "hash",
+                    new SourceActor("u-admin", "usuarios.responsable", "PERSON"), "req-1");
+        }
+    }
+
+    @Nested
+    class UsersCorrelation {
+
+        private final ActivityEventRepository repository = mock(ActivityEventRepository.class);
+        private final UsersChangeCorrelator correlator = new UsersChangeCorrelator(repository, properties());
+        private final Instant at = Instant.parse("2026-09-28T10:00:00Z");
+        private final ActivityEventDraft anyDraft = ActivityEventDraft.builder().source("x", "y").type(ActivityTypes.USERS_USER_UPDATED)
+                .occurredAt(at).build();
+
+        @Test
+        void theKeycloakLineArrivingAfterTheOneOfUsersIsSupersededByTheClosestOne() {
+            ActivityEvent keycloak = line("keycloak-admin", ActivityTypes.USERS_ADMIN_USER_UPDATED, Actor.service("mto-users-svc", "svc"), "user", USER_ID, at);
+            ActivityEvent near = line("mto-users", ActivityTypes.USERS_USER_DISABLED, Actor.person("alice", "u1"), "user", USER_ID, at.minusSeconds(5));
+            ActivityEvent far = line("mto-users", ActivityTypes.USERS_USER_UPDATED, Actor.person("alice", "u1"), "user", USER_ID, at.minusSeconds(100));
+            when(repository.findLinesBySubject(eq(Set.of(ActivityTypes.USERS_USER_UPDATED, ActivityTypes.USERS_USER_ENABLED, ActivityTypes.USERS_USER_DISABLED)),
+                    eq("user"), eq(USER_ID), eq(at.minus(Duration.ofMinutes(2))), eq(at.plus(Duration.ofMinutes(2))))).thenReturn(List.of(far, near));
+            when(repository.supersede(any(), any())).thenReturn(1);
+
+            correlator.afterIngested(keycloak, anyDraft);
+
+            verify(repository).supersede(keycloak.getId(), near.getId());
+            verify(repository, never()).supersede(eq(keycloak.getId()), eq(far.getId()));
+        }
+
+        @Test
+        void theUsersLineArrivingAfterSupersedesEveryOpenKeycloakLineOfThatChange() {
+            ActivityEvent users = line("mto-users", ActivityTypes.USERS_OFFLINE_SESSION_ALL_REVOKED, Actor.person("alice", "u1"), "user", USER_ID, at);
+            ActivityEvent consent1 = line("keycloak-admin", ActivityTypes.USERS_ADMIN_CONSENT_REVOKED, Actor.service("mto-users-svc", "svc"), "user", USER_ID, at.minusSeconds(3));
+            ActivityEvent consent2 = line("keycloak-admin", ActivityTypes.USERS_ADMIN_CONSENT_REVOKED, Actor.service("mto-users-svc", "svc"), "user", USER_ID, at.minusSeconds(2));
+            when(repository.findUnsupersededLines(eq("keycloak-admin"), eq(ActorKind.SERVICE), eq(Set.of(ActivityTypes.USERS_ADMIN_CONSENT_REVOKED)),
+                    eq("user"), eq(USER_ID), any(), any())).thenReturn(List.of(consent1, consent2));
+            when(repository.supersede(any(), any())).thenReturn(1);
+
+            correlator.afterIngested(users, anyDraft);
+
+            verify(repository).supersede(consent1.getId(), users.getId());
+            verify(repository).supersede(consent2.getId(), users.getId());
+        }
+
+        @Test
+        void aSessionClosedFromTheApplicationMatchesTheKeycloakLineOfThatSessionInEitherOrder() {
+            ActivityEvent users = line("mto-users", ActivityTypes.USERS_SESSION_REVOKED, Actor.person("alice", "u1"), "user", USER_ID, at);
+            ActivityEventDraft withSession = ActivityEventDraft.builder().source("mto-users", "s").type(ActivityTypes.USERS_SESSION_REVOKED)
+                    .occurredAt(at).payload(Map.of("session", "sess-1")).build();
+            ActivityEvent keycloak = line("keycloak-admin", ActivityTypes.USERS_ADMIN_SESSION_DELETED, Actor.service("mto-users-svc", "svc"), "session", "sess-1", at.plusSeconds(3));
+            when(repository.findUnsupersededLines(eq("keycloak-admin"), eq(ActorKind.SERVICE), eq(Set.of(ActivityTypes.USERS_ADMIN_SESSION_DELETED)),
+                    eq("session"), eq("sess-1"), any(), any())).thenReturn(List.of(keycloak));
+            when(repository.findLinesBySessionPayload(eq(Set.of(ActivityTypes.USERS_SESSION_REVOKED, ActivityTypes.USERS_OFFLINE_SESSION_REVOKED)),
+                    eq("sess-1"), any(), any())).thenReturn(List.of(users));
+            when(repository.supersede(any(), any())).thenReturn(1);
+
+            correlator.afterIngested(users, withSession);
+            correlator.afterIngested(keycloak, anyDraft);
+
+            verify(repository, times(2)).supersede(keycloak.getId(), users.getId());
+        }
+
+        @Test
+        void aChangeMadeOutsideTheApplicationAndAnythingThatIsNotAUsersChangeIsNeverFused() {
+            correlator.afterIngested(line("keycloak-admin", ActivityTypes.USERS_ADMIN_USER_UPDATED, new Actor(ActorKind.PERSON, null, "admin-id"), "user", USER_ID, at), anyDraft);
+            correlator.afterIngested(line("keycloak-admin", ActivityTypes.USERS_ADMIN_OTHER, Actor.service("mto-users-svc", "svc"), "realm-resource", "realm", at), anyDraft);
+            correlator.afterIngested(event(ActivityTypes.ACCESS_LOGIN, ActivityCategory.ACCESS, ActivitySeverity.INFO, "alice", null), anyDraft);
+
+            verifyNoInteractions(repository);
         }
     }
 }

@@ -36,11 +36,14 @@ import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.json.JsonMapper;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -102,7 +105,19 @@ class MessagingLayerTest {
                     "app.rabbitmq.sources.master-data.queue=" + SourceRabbitMqNames.MASTER_DATA_QUEUE,
                     "app.rabbitmq.sources.master-data.dead-letter-exchange=" + SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_EXCHANGE,
                     "app.rabbitmq.sources.master-data.dead-letter-queue=" + SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_QUEUE,
-                    "app.rabbitmq.sources.master-data.dead-letter-routing-key=" + SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_ROUTING_KEY);
+                    "app.rabbitmq.sources.master-data.dead-letter-routing-key=" + SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_ROUTING_KEY,
+                    "app.rabbitmq.sources.configuration.exchange=" + SourceRabbitMqNames.CONFIGURATION_EXCHANGE,
+                    "app.rabbitmq.sources.configuration.routing-key=" + SourceRabbitMqNames.CONFIGURATION_ROUTING_PATTERN,
+                    "app.rabbitmq.sources.configuration.queue=" + SourceRabbitMqNames.CONFIGURATION_QUEUE,
+                    "app.rabbitmq.sources.configuration.dead-letter-exchange=" + SourceRabbitMqNames.CONFIGURATION_DEAD_LETTER_EXCHANGE,
+                    "app.rabbitmq.sources.configuration.dead-letter-queue=" + SourceRabbitMqNames.CONFIGURATION_DEAD_LETTER_QUEUE,
+                    "app.rabbitmq.sources.configuration.dead-letter-routing-key=" + SourceRabbitMqNames.CONFIGURATION_DEAD_LETTER_ROUTING_KEY,
+                    "app.rabbitmq.sources.users.exchange=" + SourceRabbitMqNames.USERS_EXCHANGE,
+                    "app.rabbitmq.sources.users.routing-key=" + SourceRabbitMqNames.USERS_ROUTING_PATTERN,
+                    "app.rabbitmq.sources.users.queue=" + SourceRabbitMqNames.USERS_QUEUE,
+                    "app.rabbitmq.sources.users.dead-letter-exchange=" + SourceRabbitMqNames.USERS_DEAD_LETTER_EXCHANGE,
+                    "app.rabbitmq.sources.users.dead-letter-queue=" + SourceRabbitMqNames.USERS_DEAD_LETTER_QUEUE,
+                    "app.rabbitmq.sources.users.dead-letter-routing-key=" + SourceRabbitMqNames.USERS_DEAD_LETTER_ROUTING_KEY);
 
     // --- contrato ---
 
@@ -130,6 +145,38 @@ class MessagingLayerTest {
         assertNull(envelope.actor());
         assertNull(envelope.correlationId());
         assertEquals("station-42", envelope.referenceId());
+    }
+
+    /** Los ejemplos que cada productor versiona en su repositorio, copiados tal cual: el contrato, byte a byte. */
+    @Test
+    void theExamplesOfEveryProducerDeserializeWithTheirActorAndCorrelation() {
+        SourceEnvelope jobFinished = convert(fixture("contracts/mto-configuration/job-finished.json"));
+        assertEquals("CONFIGURATION_JOB_FINISHED", jobFinished.eventType());
+        assertEquals("job", jobFinished.data().get("entityName"));
+        assertEquals("finished", jobFinished.data().get("eventName"));
+        assertEquals("config.responsable", jobFinished.actor().username());
+        assertEquals("00000000-0000-4000-8000-0000000000aa", jobFinished.correlationId(), "el jobId es la correlacion del trabajo");
+
+        SourceEnvelope steadyArm = convert(fixture("contracts/mto-configuration/master-data-steady-arm-updated.json"));
+        assertEquals("steady-arm", steadyArm.data().get("entityName"));
+        assertEquals("UPDATED", steadyArm.data().get("operation"));
+        assertEquals("config.editor", steadyArm.actor().username());
+
+        SourceEnvelope userCreated = convert(fixture("contracts/mto-users/user-created.json"));
+        assertEquals("mto-users", userCreated.origin());
+        assertEquals("USERS_USER_CREATED", userCreated.eventType());
+        assertEquals("user", userCreated.data().get("entityName"));
+        assertEquals("created", userCreated.data().get("eventName"));
+        assertEquals("PERSON", userCreated.actor().kind());
+        @SuppressWarnings("unchecked") Map<String, Object> values = (Map<String, Object>) userCreated.data().get("values");
+        assertEquals("ana.nueva", values.get("targetUsername"));
+
+        SourceEnvelope profileAssigned = convert(fixture("contracts/mto-users/profile-assigned.json"));
+        assertEquals("profile", profileAssigned.data().get("entityName"));
+        assertEquals("assigned", profileAssigned.data().get("eventName"));
+        @SuppressWarnings("unchecked") Map<String, Object> profileValues = (Map<String, Object>) profileAssigned.data().get("values");
+        assertNull(profileValues.get("targetUsername"), "mto-users no siempre sabe el nombre del usuario objetivo");
+        assertEquals("mto-users-viewer", profileValues.get("profile"));
     }
 
     // --- consumidor ---
@@ -229,8 +276,8 @@ class MessagingLayerTest {
     void theTopologyDeclaresTheConfigurationExchangeAndOurQueueWithItsDeadLetters() {
         contextRunner.run(context -> {
             Declarables topology = context.getBean("sourceTopology", Declarables.class);
-            TopicExchange exchange = topology.getDeclarablesByType(TopicExchange.class).getFirst();
-            assertEquals(SourceRabbitMqNames.MASTER_DATA_EXCHANGE, exchange.getName());
+            TopicExchange exchange = topology.getDeclarablesByType(TopicExchange.class).stream()
+                    .filter(e -> e.getName().equals(SourceRabbitMqNames.MASTER_DATA_EXCHANGE)).findFirst().orElseThrow();
             assertTrue(exchange.isDurable());
             assertFalse(exchange.isAutoDelete());
 
@@ -243,10 +290,30 @@ class MessagingLayerTest {
             assertTrue(bindings.stream().anyMatch(b -> b.getExchange().equals(SourceRabbitMqNames.MASTER_DATA_EXCHANGE)
                     && b.getRoutingKey().equals(SourceRabbitMqNames.MASTER_DATA_ROUTING_PATTERN)
                     && b.getDestination().equals(SourceRabbitMqNames.MASTER_DATA_QUEUE)));
-            assertEquals(SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_EXCHANGE, topology.getDeclarablesByType(DirectExchange.class).getFirst().getName());
+            assertEquals(List.of(SourceRabbitMqNames.CONFIGURATION_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_EXCHANGE,
+                            SourceRabbitMqNames.USERS_DEAD_LETTER_EXCHANGE),
+                    topology.getDeclarablesByType(DirectExchange.class).stream().map(DirectExchange::getName).sorted().toList());
+
+            // Las otras dos fuentes de RabbitMQ: cada una con su exchange (el del productor), su cola y sus dead letters.
+            assertEquals(List.of(SourceRabbitMqNames.CONFIGURATION_EXCHANGE, SourceRabbitMqNames.MASTER_DATA_EXCHANGE, SourceRabbitMqNames.USERS_EXCHANGE),
+                    topology.getDeclarablesByType(TopicExchange.class).stream().map(TopicExchange::getName).sorted().toList());
+            for (String[] source : new String[][]{
+                    {SourceRabbitMqNames.CONFIGURATION_EXCHANGE, SourceRabbitMqNames.CONFIGURATION_ROUTING_PATTERN, SourceRabbitMqNames.CONFIGURATION_QUEUE,
+                            SourceRabbitMqNames.CONFIGURATION_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.CONFIGURATION_DEAD_LETTER_QUEUE},
+                    {SourceRabbitMqNames.USERS_EXCHANGE, SourceRabbitMqNames.USERS_ROUTING_PATTERN, SourceRabbitMqNames.USERS_QUEUE,
+                            SourceRabbitMqNames.USERS_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.USERS_DEAD_LETTER_QUEUE}}) {
+                Queue sourceQueue = queues.stream().filter(q -> q.getName().equals(source[2])).findFirst().orElseThrow();
+                assertEquals(source[3], sourceQueue.getArguments().get(SourceRabbitMqNames.ARG_DEAD_LETTER_EXCHANGE));
+                assertTrue(queues.stream().anyMatch(q -> q.getName().equals(source[4])));
+                assertTrue(bindings.stream().anyMatch(b -> b.getExchange().equals(source[0]) && b.getRoutingKey().equals(source[1])
+                        && b.getDestination().equals(source[2])), source[2]);
+            }
+            assertTrue(context.containsBean("configurationSourceConsumer"));
+            assertTrue(context.containsBean("usersSourceConsumer"));
 
             assertEquals(1, context.getBeansOfType(AmqpAdmin.class).size());
             assertTrue(context.containsBean("masterDataSourceConsumer"));
+
             SimpleRabbitListenerContainerFactory factory = context.getBean(RabbitListenerContainerFactoryNames.SOURCES, SimpleRabbitListenerContainerFactory.class);
             assertEquals(Boolean.FALSE, ReflectionTestUtils.getField(factory, "defaultRequeueRejected"));
         });
@@ -256,10 +323,20 @@ class MessagingLayerTest {
     void theListenerCanBeDisabledAloneAndTheWholeChannelWithTheMasterSwitch() {
         contextRunner.withPropertyValues("app.rabbitmq.sources.master-data.listener-enabled=false").run(context -> {
             assertFalse(context.containsBean("masterDataSourceConsumer"));
+            assertTrue(context.containsBean("configurationSourceConsumer"));
+            assertTrue(context.containsBean("usersSourceConsumer"));
             assertTrue(context.containsBean("sourceTopology"));
+        });
+        contextRunner.withPropertyValues("app.rabbitmq.sources.users.listener-enabled=false",
+                "app.rabbitmq.sources.configuration.listener-enabled=false").run(context -> {
+            assertTrue(context.containsBean("masterDataSourceConsumer"));
+            assertFalse(context.containsBean("configurationSourceConsumer"));
+            assertFalse(context.containsBean("usersSourceConsumer"));
         });
         contextRunner.withPropertyValues("app.rabbitmq.enabled=false").run(context -> {
             assertFalse(context.containsBean("masterDataSourceConsumer"));
+            assertFalse(context.containsBean("configurationSourceConsumer"));
+            assertFalse(context.containsBean("usersSourceConsumer"));
             assertFalse(context.containsBean("sourceTopology"));
             assertFalse(context.containsBean(RabbitListenerContainerFactoryNames.SOURCES));
         });
@@ -275,6 +352,14 @@ class MessagingLayerTest {
     }
 
     // --- soporte ---
+
+    static String fixture(String path) {
+        try {
+            return new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException missing) {
+            throw new UncheckedIOException(missing);
+        }
+    }
 
     private static SourceEnvelope convert(String json) {
         MessageConverter converter = new RabbitMqConfiguration(new SourceRabbitProperties(true, Map.of()))

@@ -2,9 +2,11 @@ package com.alejandro.mtonotification.configuration.rabbitmq;
 
 import com.alejandro.mtonotification.application.service.SourceEventProcessor;
 import com.alejandro.mtonotification.configuration.messaging.MessagePayloadSignatureVerifier;
+import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.ConfigurationSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.MasterDataSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.RabbitListenerContainerFactoryNames;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.SourceRabbitMqNames;
+import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.UsersSourceConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Binding;
@@ -108,5 +110,19 @@ public class RabbitMqConfiguration {
     public MasterDataSourceConsumer masterDataSourceConsumer(SourceEventProcessor processor, MessagePayloadSignatureVerifier signatureVerifier) {
         LOGGER.info("Master data consumer enabled on {}", properties.source(SourceRabbitMqNames.MASTER_DATA_SOURCE).queue());
         return new MasterDataSourceConsumer(processor, signatureVerifier);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "app.rabbitmq.sources.configuration", name = "listener-enabled", havingValue = "true", matchIfMissing = true)
+    public ConfigurationSourceConsumer configurationSourceConsumer(SourceEventProcessor processor, MessagePayloadSignatureVerifier signatureVerifier) {
+        LOGGER.info("Configuration events consumer enabled on {}", properties.source(SourceRabbitMqNames.CONFIGURATION_SOURCE).queue());
+        return new ConfigurationSourceConsumer(processor, signatureVerifier);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "app.rabbitmq.sources.users", name = "listener-enabled", havingValue = "true", matchIfMissing = true)
+    public UsersSourceConsumer usersSourceConsumer(SourceEventProcessor processor, MessagePayloadSignatureVerifier signatureVerifier) {
+        LOGGER.info("Users events consumer enabled on {}", properties.source(SourceRabbitMqNames.USERS_SOURCE).queue());
+        return new UsersSourceConsumer(processor, signatureVerifier);
     }
 }
