@@ -23,6 +23,7 @@ import com.alejandro.mtonotification.infrastructure.persistence.repository.Notif
 import com.alejandro.mtonotification.infrastructure.persistence.repository.NotificationRepository;
 import com.alejandro.mtonotification.infrastructure.persistence.specification.ActivityEventSpecification;
 import com.alejandro.mtonotification.support.PostgreSQLTestContainer;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -62,10 +63,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * racha con su aviso, un cambio hecho desde la consola es «fuera de la aplicacion», y una segunda
  * pasada no repite nada. Ademas, el directorio resuelve las direcciones de una audiencia.
  *
- * <p>El realm de {@code src/test/resources/keycloak/mto-notification-test-realm.json} lleva los
- * eventos activados y la cuenta de servicio con los mismos roles que concede
- * {@code mto-platform/keycloak/apply-partials.sh}: es la mitad del realm que
- * {@code KeycloakAuthorizationIT} no ve.</p>
+ * <p>El realm de {@code src/test/resources/keycloak/mto-notification-test-realm.json} lleva la
+ * cuenta de servicio con los mismos roles que concede {@code mto-platform/keycloak/apply-partials.sh};
+ * los eventos se activan por la Admin API una vez arrancado, como hace ese mismo guion. No van en
+ * el JSON a proposito: Keycloak 26.1 no arranca con {@code --import-realm} si el realm trae
+ * {@code adminEventsEnabled} y una cuenta de servicio a la vez («Session not bound to a realm»).
+ * Es la mitad del realm que {@code KeycloakAuthorizationIT} no ve.</p>
  */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(properties = {
@@ -104,6 +107,26 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
                             .forPort(HTTP_PORT)
                             .forStatusCode(200)
                             .withStartupTimeout(Duration.ofMinutes(5)));
+
+    /** Lo que apply-partials.sh hace en el stack: PUT /events/config con el administrador del realm master. */
+    @BeforeAll
+    static void enableRealmEvents() throws Exception {
+        String adminToken = adminToken();
+        HttpResponse<String> response = HTTP.send(HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl() + "/admin/realms/" + REALM + "/events/config"))
+                .header("Authorization", "Bearer " + adminToken)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString("""
+                        {"eventsEnabled": true, "eventsExpiration": 604800, "eventsListeners": ["jboss-logging"],
+                         "enabledEventTypes": ["LOGIN", "LOGIN_ERROR", "LOGOUT", "LOGOUT_ERROR", "UPDATE_PASSWORD", "RESET_PASSWORD",
+                           "SEND_RESET_PASSWORD", "EXECUTE_ACTIONS", "EXECUTE_ACTION_TOKEN", "UPDATE_CREDENTIAL", "REMOVE_CREDENTIAL",
+                           "UPDATE_TOTP", "REMOVE_TOTP", "USER_DISABLED_BY_TEMPORARY_LOCKOUT", "USER_DISABLED_BY_PERMANENT_LOCKOUT",
+                           "IMPERSONATE", "UPDATE_PROFILE", "UPDATE_EMAIL"],
+                         "adminEventsEnabled": true, "adminEventsDetailsEnabled": true}
+                        """))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, response.statusCode(), "PUT /events/config: " + response.body());
+    }
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -247,12 +270,17 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
                 "grant_type=password&client_id=" + encode(FRONTEND) + "&username=" + encode(username) + "&password=" + encode(password) + "&scope=openid");
     }
 
-    /** Lo que haria alguien desde la consola o kcadm: el usuario administrador del realm master, con admin-cli. */
-    private static void disableUserFromTheAdminConsole(String username) throws Exception {
+    /** El administrador del realm master, con admin-cli: lo que usa la consola o kcadm. */
+    private static String adminToken() throws Exception {
         HttpResponse<String> tokenResponse = post(baseUrl() + "/realms/master/protocol/openid-connect/token",
                 "grant_type=password&client_id=admin-cli&username=admin&password=admin");
         assertEquals(200, tokenResponse.statusCode(), tokenResponse.body());
-        String adminToken = JSON.readTree(tokenResponse.body()).get("access_token").asString();
+        return JSON.readTree(tokenResponse.body()).get("access_token").asString();
+    }
+
+    /** Lo que haria alguien desde la consola o kcadm: un cambio con el administrador del realm master. */
+    private static void disableUserFromTheAdminConsole(String username) throws Exception {
+        String adminToken = adminToken();
 
         HttpResponse<String> users = HTTP.send(HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl() + "/admin/realms/" + REALM + "/users?username=" + encode(username) + "&exact=true"))
