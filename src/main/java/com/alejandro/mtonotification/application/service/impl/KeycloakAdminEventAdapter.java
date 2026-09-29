@@ -1,6 +1,8 @@
 package com.alejandro.mtonotification.application.service.impl;
 
 import com.alejandro.mtonotification.application.dto.keycloak.KeycloakAdminEvent;
+import com.alejandro.mtonotification.application.dto.keycloak.KeycloakClient;
+import com.alejandro.mtonotification.application.service.KeycloakDirectoryClient;
 import com.alejandro.mtonotification.configuration.keycloak.KeycloakProperties;
 import com.alejandro.mtonotification.domain.model.ActivityEventDraft;
 import com.alejandro.mtonotification.domain.model.ActivitySeverity;
@@ -18,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -39,10 +42,14 @@ public class KeycloakAdminEventAdapter {
 
     private final KeycloakProperties properties;
     private final JsonMapper jsonMapper;
+    private final KeycloakDirectoryClient directory;
+    /** id interno → clientId. Un cliente no cambia de id en su vida, asi que se recuerda sin caducidad. */
+    private final Map<String, String> clientIdsByInternalId = new ConcurrentHashMap<>();
 
-    public KeycloakAdminEventAdapter(KeycloakProperties properties, JsonMapper jsonMapper) {
+    public KeycloakAdminEventAdapter(KeycloakProperties properties, JsonMapper jsonMapper, KeycloakDirectoryClient directory) {
         this.properties = properties;
         this.jsonMapper = jsonMapper;
+        this.directory = directory;
     }
 
     public static String fingerprint(KeycloakAdminEvent event) {
@@ -64,10 +71,14 @@ public class KeycloakAdminEventAdapter {
 
         String type = type(operation, resourceType, path);
         Subject subject = subject(path);
-        Actor actor = actor(event);
+        String clientId = clientId(event);
+        Actor actor = actor(clientId, event);
 
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("clientId", event.clientId());
+        payload.put("clientId", clientId);
+        if (event.authDetails() != null && event.authDetails().realmId() != null) {
+            payload.put("authRealmId", event.authDetails().realmId());
+        }
         payload.put("operationType", operation);
         payload.put("resourceType", resourceType);
         payload.put("resourcePath", path);
@@ -89,8 +100,23 @@ public class KeycloakAdminEventAdapter {
                 .build());
     }
 
-    private Actor actor(KeycloakAdminEvent event) {
-        String clientId = event.clientId();
+    /**
+     * {@code authDetails.clientId} es el id interno del cliente (un UUID), no su {@code clientId}: se
+     * resuelve en el directorio del realm y se recuerda. Un cliente que no esta en el realm (la consola
+     * de {@code master}, kcadm) se queda con su UUID, que a efectos de la regla es «fuera de la
+     * aplicacion». Si el directorio no responde, el evento se queda FAILED en el inbox y la siguiente
+     * pasada lo reintenta.
+     */
+    String clientId(KeycloakAdminEvent event) {
+        String internalId = event.clientId();
+        if (internalId == null || internalId.isBlank()) {
+            return null;
+        }
+        return clientIdsByInternalId.computeIfAbsent(internalId.trim(),
+                id -> directory.findClientById(id).map(KeycloakClient::clientId).filter(value -> !value.isBlank()).orElse(id));
+    }
+
+    private Actor actor(String clientId, KeycloakAdminEvent event) {
         if (clientId != null && clientId.equals(properties.events().usersServiceClientId())) {
             return Actor.service(clientId, event.actorUserId());
         }

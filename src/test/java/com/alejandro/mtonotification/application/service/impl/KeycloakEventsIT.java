@@ -215,7 +215,9 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
         assertEquals("keycloak-admin", consoleChange.getSourceService());
         assertEquals(ActorKind.PERSON, consoleChange.getActorKind(), "admin-cli no es la cuenta de servicio de mto-users");
         assertEquals("user", consoleChange.getSubjectType());
-        assertTrue(consoleChange.getPayload().contains("admin-cli"), consoleChange.getPayload());
+        // admin-cli es un cliente del realm master: no esta en mto, asi que se queda con su id interno y con el realm de la credencial.
+        assertFalse(consoleChange.getPayload().contains("\"mto-users-svc\""), consoleChange.getPayload());
+        assertTrue(consoleChange.getPayload().contains("authRealmId"), consoleChange.getPayload());
         assertFalse(consoleChange.getPayload().toLowerCase().contains("password"));
         assertNull(consoleChange.getIpAddress(), "la IP no vive fuera de ACCESS");
 

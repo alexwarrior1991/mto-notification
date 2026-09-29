@@ -17,6 +17,9 @@ public interface KeycloakDirectoryClient {
 
     Optional<KeycloakClient> findClient(String clientId);
 
+    /** Por su id interno (el UUID que Keycloak pone en {@code authDetails.clientId}); vacio si no esta en el realm. */
+    Optional<KeycloakClient> findClientById(String id);
+
     /** Miembros directos de un rol de cliente. */
     List<KeycloakUser> clientRoleMembers(String clientUuid, String roleName, int first, int max);
 

@@ -110,6 +110,18 @@ class KeycloakEventsClientTest {
     }
 
     @Test
+    void aClientIsFoundByItsInternalIdAndAForeignOneIsNot() {
+        server.expect(requestTo(BASE + "/clients/0f0f0f0f-1111-4222-8333-444444444444"))
+                .andRespond(withSuccess("""
+                        {"id":"0f0f0f0f-1111-4222-8333-444444444444","clientId":"mto-users-svc","enabled":true}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE + "/clients/9a9a9a9a-1111-4222-8333-444444444444")).andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertEquals("mto-users-svc", directoryClient.findClientById("0f0f0f0f-1111-4222-8333-444444444444").orElseThrow().clientId());
+        assertTrue(directoryClient.findClientById("9a9a9a9a-1111-4222-8333-444444444444").isEmpty(), "la consola de master no esta en el realm");
+    }
+
+    @Test
     void roleNamesWithSpacesAreEncodedInThePath() {
         server.expect(requestTo(BASE + "/roles/con%20espacio/composites/clients/c-uuid")).andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
         assertTrue(directoryClient.clientCompositesOfRealmRole("con espacio", "c-uuid").isEmpty());

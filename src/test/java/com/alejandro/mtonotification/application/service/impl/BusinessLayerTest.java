@@ -365,7 +365,8 @@ class BusinessLayerTest {
     class Keycloak {
 
         private final KeycloakLoginEventAdapter loginAdapter = new KeycloakLoginEventAdapter();
-        private final KeycloakAdminEventAdapter adminAdapter = new KeycloakAdminEventAdapter(keycloakProperties(), JSON);
+        private final KeycloakDirectoryClient directory = mock(KeycloakDirectoryClient.class);
+        private final KeycloakAdminEventAdapter adminAdapter = new KeycloakAdminEventAdapter(keycloakProperties(), JSON, directory);
 
         @Test
         void aLoginErrorBecomesAFailedAccessWithOnlyWhitelistedDetails() {
@@ -403,7 +404,13 @@ class BusinessLayerTest {
 
         @Test
         void anAdminEventIsClassifiedByItsPathAndItsClient() {
-            KeycloakAdminEvent fromApp = new KeycloakAdminEvent(1L, "realm", new KeycloakAdminEvent.AuthDetails("realm", "mto-users-svc", "svc", "10.0.0.2"),
+            // authDetails.clientId es el id interno del cliente, no su clientId: el directorio lo traduce.
+            String usersSvcInternalId = "0f0f0f0f-1111-4222-8333-444444444444";
+            String masterConsoleInternalId = "9a9a9a9a-1111-4222-8333-444444444444";
+            when(directory.findClientById(usersSvcInternalId)).thenReturn(Optional.of(new KeycloakClient(usersSvcInternalId, "mto-users-svc")));
+            when(directory.findClientById(masterConsoleInternalId)).thenReturn(Optional.empty());
+
+            KeycloakAdminEvent fromApp = new KeycloakAdminEvent(1L, "realm", new KeycloakAdminEvent.AuthDetails("realm", usersSvcInternalId, "svc", "10.0.0.2"),
                     "UPDATE", "USER", "users/8d1f6d33-8c9e-4c0d-9f5b-2b1c0f3a4e21", null, null, "{}");
             ActivityEventDraft app = adminAdapter.toDraft(fromApp).orElseThrow();
             assertEquals(ActivityTypes.USERS_ADMIN_USER_UPDATED, app.type());
@@ -411,20 +418,42 @@ class BusinessLayerTest {
             assertEquals("service-account-mto-users-svc", app.actor().username());
             assertEquals("8d1f6d33-8c9e-4c0d-9f5b-2b1c0f3a4e21", app.subject().id());
             assertEquals("mto-users-svc", app.payload().get("clientId"));
+            assertEquals("realm", app.payload().get("authRealmId"));
             assertNull(app.ipAddress(), "la IP no vive fuera de ACCESS");
 
-            KeycloakAdminEvent fromConsole = new KeycloakAdminEvent(1L, "realm", new KeycloakAdminEvent.AuthDetails("master", "security-admin-console", "admin-id", null),
+            // La consola de master (o kcadm): un cliente que no esta en el realm se queda con su UUID y es una persona.
+            KeycloakAdminEvent fromConsole = new KeycloakAdminEvent(1L, "realm", new KeycloakAdminEvent.AuthDetails("master", masterConsoleInternalId, "admin-id", null),
                     "CREATE", "CLIENT_ROLE_MAPPING", "users/8d1f6d33-8c9e-4c0d-9f5b-2b1c0f3a4e21/role-mappings/clients/abc",
                     "[{\"id\":\"r1\",\"name\":\"stock-read\"},{\"id\":\"r2\",\"name\":\"stock-write\"}]", null, "{}");
             ActivityEventDraft console = adminAdapter.toDraft(fromConsole).orElseThrow();
             assertEquals(ActivityTypes.USERS_ADMIN_CLIENT_ROLES_ADDED, console.type());
             assertEquals(ActorKind.PERSON, console.actor().kind());
             assertEquals("admin-id", console.actor().id());
+            assertEquals(masterConsoleInternalId, console.payload().get("clientId"));
+            assertEquals("master", console.payload().get("authRealmId"));
             assertEquals(List.of("stock-read", "stock-write"), console.payload().get("roles"));
+
+            // El directorio se pregunta una vez por cliente.
+            adminAdapter.toDraft(fromApp);
+            adminAdapter.toDraft(fromConsole);
+            verify(directory, times(1)).findClientById(usersSvcInternalId);
+            verify(directory, times(1)).findClientById(masterConsoleInternalId);
 
             assertEquals(ActivityTypes.USERS_ADMIN_PASSWORD_RESET, KeycloakAdminEventAdapter.type("ACTION", "USER", "users/8d1f6d33-8c9e-4c0d-9f5b-2b1c0f3a4e21/reset-password"));
             assertEquals(ActivityTypes.USERS_ADMIN_SESSION_DELETED, KeycloakAdminEventAdapter.type("DELETE", "USER_SESSION", "sessions/8d1f6d33-8c9e-4c0d-9f5b-2b1c0f3a4e21"));
             assertEquals(ActivityTypes.USERS_ADMIN_OTHER, KeycloakAdminEventAdapter.type("UPDATE", "REALM", "realm"));
+        }
+
+        @Test
+        void aDirectoryOutageWhileResolvingTheClientLeavesTheEventForTheNextPass() {
+            when(directory.findClientById(anyString())).thenThrow(new DirectoryUnavailableException("Keycloak is down"));
+            KeycloakAdminEvent event = new KeycloakAdminEvent(1L, "realm", new KeycloakAdminEvent.AuthDetails("realm", "1b1b1b1b-1111-4222-8333-444444444444", "svc", null),
+                    "UPDATE", "USER", "users/8d1f6d33-8c9e-4c0d-9f5b-2b1c0f3a4e21", null, null, "{}");
+
+            assertThrows(DirectoryUnavailableException.class, () -> adminAdapter.toDraft(event));
+            KeycloakAdminEvent withoutClient = new KeycloakAdminEvent(1L, "realm", new KeycloakAdminEvent.AuthDetails("realm", null, "svc", null),
+                    "UPDATE", "USER", "users/8d1f6d33-8c9e-4c0d-9f5b-2b1c0f3a4e21", null, null, "{}");
+            assertNull(adminAdapter.toDraft(withoutClient).orElseThrow().payload().get("clientId"));
         }
 
         @Test

@@ -85,10 +85,14 @@ Todo el HTTP corre fuera de transacción, con la cuenta de servicio `mto-notific
 Los eventos de administración se clasifican por `operationType`, `resourceType` y `resourcePath`:
 `users.admin.user-created/updated/deleted`, `password-reset`, `logout`, `session-deleted`,
 `credential-deleted`, `client-roles-added/removed`, `realm-roles-added/removed`,
-`consent-revoked`, `actions-email-sent`, `other`. El actor es `SERVICE` cuando
-`authDetails.clientId` es `mto-users-svc` (`app.keycloak.events.users-service-client-id`) y
-`PERSON` en cualquier otro caso; la regla `users-change-outside-application` avisa de estos
-últimos (consola, `kcadm`) a `mto-users-admin` y `mto-ops`, con freno de 5 min por actor.
+`consent-revoked`, `actions-email-sent`, `other`. `authDetails.clientId` trae el **id interno** del
+cliente (un UUID), no su `clientId`: el adaptador lo resuelve en el directorio del realm
+(`GET /clients/{id}`, recordado sin caducidad) y un cliente que no está en el realm (la consola de
+`master`, `kcadm`) se queda con su UUID; `payload.authRealmId` dice de qué realm vino la
+credencial. El actor es `SERVICE` cuando el cliente resuelto es `mto-users-svc`
+(`app.keycloak.events.users-service-client-id`) y `PERSON` en cualquier otro caso; la regla
+`users-change-outside-application` avisa de estos últimos (consola, `kcadm`) a `mto-users-admin` y
+`mto-ops`, con freno de 5 min por actor.
 
 ## Las reglas de esta fase
 

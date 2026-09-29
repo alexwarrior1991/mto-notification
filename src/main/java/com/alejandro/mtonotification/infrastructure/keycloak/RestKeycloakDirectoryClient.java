@@ -61,6 +61,18 @@ public class RestKeycloakDirectoryClient implements KeycloakDirectoryClient {
     }
 
     @Override
+    public Optional<KeycloakClient> findClientById(String id) {
+        try {
+            return Optional.ofNullable(KeycloakApiSupport.call(circuitBreaker, "GET /clients/{id}", () -> restClient.get()
+                    .uri(KeycloakAdminApi.CLIENTS + "/{id}", id)
+                    .retrieve()
+                    .body(KeycloakClient.class)));
+        } catch (KeycloakApiSupport.NotFound notFound) {
+            return Optional.empty();
+        }
+    }
+
+    @Override
     public List<KeycloakUser> clientRoleMembers(String clientUuid, String roleName, int first, int max) {
         try {
             List<KeycloakUser> users = KeycloakApiSupport.call(circuitBreaker, "GET /clients/{id}/roles/{role}/users", () -> restClient.get()
