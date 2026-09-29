@@ -200,10 +200,14 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
 
         assertEquals(3, activityEventRepository.count(ActivityEventSpecification.typeEquals(ActivityTypes.ACCESS_LOGIN_FAILED)
                 .and(ActivityEventSpecification.actorUsernameEquals("auditor"))));
-        List<ActivityEvent> streaks = activityEventRepository.findAll(ActivityEventSpecification.typeEquals(ActivityTypes.ACCESS_LOGIN_STREAK));
-        assertEquals(1, streaks.size(), "tres fallos seguidos son una racha, no tres");
-        assertEquals("auditor", streaks.getFirst().getActorUsername());
-        assertTrue(streaks.getFirst().getSourceEventId().startsWith("streak:username:auditor:"));
+        List<ActivityEvent> streaks = activityEventRepository.findAll(ActivityEventSpecification.typeEquals(ActivityTypes.ACCESS_LOGIN_STREAK)
+                .and(ActivityEventSpecification.actorUsernameEquals("auditor")));
+        assertEquals(1, streaks.size(), "tres fallos seguidos de una cuenta son una racha, no tres");
+        ActivityEvent streak = streaks.getFirst();
+        assertTrue(streak.getSourceEventId().startsWith("streak:username:auditor:"));
+        // Los tres fallos salieron de la misma IP (la del host de Docker): la otra dimension es otra racha, tambien una sola.
+        assertEquals(1, activityEventRepository.count(ActivityEventSpecification.typeEquals(ActivityTypes.ACCESS_LOGIN_STREAK)
+                .and(ActivityEventSpecification.subjectTypeEquals("ip"))), "y una sola racha por la IP");
 
         List<ActivityEvent> consoleChanges = activityEventRepository.findAll(ActivityEventSpecification.typeEquals(ActivityTypes.USERS_ADMIN_USER_UPDATED));
         assertEquals(1, consoleChanges.size());
@@ -216,15 +220,19 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
         assertNull(consoleChange.getIpAddress(), "la IP no vive fuera de ACCESS");
 
         // Las reglas: la racha avisa (bandeja y correo) y el cambio de la consola tambien.
-        Notification streakNotice = notificationByRule("access-login-streak");
-        assertEquals(streaks.getFirst().getId(), streakNotice.getActivityEventId());
+        Notification streakNotice = notificationForEvent(streak.getId());
+        assertEquals("access-login-streak", streakNotice.getRuleKey());
         assertTrue(audienceKeys(streakNotice).contains("PROFILE:mto-users-admin"), audienceKeys(streakNotice).toString());
         List<Delivery> streakDeliveries = deliveryRepository.findByNotificationIdOrderByCreatedAtAsc(streakNotice.getId());
         assertFalse(streakDeliveries.isEmpty(), "el correo deja una entrega por audiencia, pendiente hasta que el despachador la expanda");
         assertTrue(streakDeliveries.stream().allMatch(delivery -> delivery.getScope() == DeliveryScope.AUDIENCE
                 && delivery.getStatus() == DeliveryStatus.PENDING && "email".equals(delivery.getChannel())));
+        // El PUT /events/config del arranque es tambien un cambio de administracion hecho por el mismo
+        // administrador: dos cambios en cinco minutos son UN aviso, por el freno de la regla.
         Notification consoleNotice = notificationByRule("users-change-outside-application");
-        assertEquals(consoleChange.getId(), consoleNotice.getActivityEventId());
+        ActivityEvent noticed = activityEventRepository.findById(consoleNotice.getActivityEventId()).orElseThrow();
+        assertEquals("keycloak-admin", noticed.getSourceService());
+        assertEquals(ActorKind.PERSON, noticed.getActorKind());
 
         // El inbox y la marca: todo procesado, las marcas avanzadas y sin arrendamiento colgado.
         assertTrue(inboxMessageRepository.countBySourceServiceAndStatus("keycloak-login", InboxMessageStatus.PROCESSED) >= 4);
@@ -237,12 +245,16 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
         }
 
         // Segunda pasada: relee el solape y no repite nada.
+        long eventsBefore = activityEventRepository.count();
+        long noticesBefore = notificationRepository.count();
         Map<SourceKind, KeycloakEventsPoller.PollSummary> second = poller.pollOnce();
         assertEquals(0, second.get(SourceKind.KEYCLOAK_LOGIN).ingested(), second.toString());
         assertTrue(second.get(SourceKind.KEYCLOAK_LOGIN).duplicates() >= 4, second.toString());
         assertEquals(0, second.get(SourceKind.KEYCLOAK_ADMIN).ingested());
-        assertEquals(1, activityEventRepository.count(ActivityEventSpecification.typeEquals(ActivityTypes.ACCESS_LOGIN_STREAK)));
-        assertEquals(1, notificationRepository.count(), "no hay avisos nuevos" + notificationRepository.findAll());
+        assertEquals(eventsBefore, activityEventRepository.count(), "ni una linea nueva");
+        assertEquals(noticesBefore, notificationRepository.count(), "ni un aviso nuevo");
+        assertEquals(1, activityEventRepository.count(ActivityEventSpecification.typeEquals(ActivityTypes.ACCESS_LOGIN_STREAK)
+                .and(ActivityEventSpecification.actorUsernameEquals("auditor"))));
     }
 
     @Test
@@ -311,6 +323,13 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
 
     private static String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private Notification notificationForEvent(java.util.UUID activityEventId) {
+        List<Notification> found = notificationRepository.findAll().stream()
+                .filter(notification -> activityEventId.equals(notification.getActivityEventId())).toList();
+        assertEquals(1, found.size(), "one notification for event " + activityEventId + ": " + notificationRepository.findAll());
+        return found.getFirst();
     }
 
     private Notification notificationByRule(String ruleKey) {
