@@ -7,6 +7,7 @@ import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.Maintenan
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.MasterDataSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.RabbitListenerContainerFactoryNames;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.SourceRabbitMqNames;
+import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.StockSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.UsersSourceConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -132,5 +133,12 @@ public class RabbitMqConfiguration {
     public MaintenanceSourceConsumer maintenanceSourceConsumer(SourceEventProcessor processor, MessagePayloadSignatureVerifier signatureVerifier) {
         LOGGER.info("Maintenance events consumer enabled on {}", properties.source(SourceRabbitMqNames.MAINTENANCE_SOURCE).queue());
         return new MaintenanceSourceConsumer(processor, signatureVerifier);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "app.rabbitmq.sources.stock", name = "listener-enabled", havingValue = "true", matchIfMissing = true)
+    public StockSourceConsumer stockSourceConsumer(SourceEventProcessor processor, MessagePayloadSignatureVerifier signatureVerifier) {
+        LOGGER.info("Stock events consumer enabled on {}", properties.source(SourceRabbitMqNames.STOCK_SOURCE).queue());
+        return new StockSourceConsumer(processor, signatureVerifier);
     }
 }

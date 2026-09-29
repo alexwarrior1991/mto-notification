@@ -123,7 +123,13 @@ class MessagingLayerTest {
                     "app.rabbitmq.sources.maintenance.queue=" + SourceRabbitMqNames.MAINTENANCE_QUEUE,
                     "app.rabbitmq.sources.maintenance.dead-letter-exchange=" + SourceRabbitMqNames.MAINTENANCE_DEAD_LETTER_EXCHANGE,
                     "app.rabbitmq.sources.maintenance.dead-letter-queue=" + SourceRabbitMqNames.MAINTENANCE_DEAD_LETTER_QUEUE,
-                    "app.rabbitmq.sources.maintenance.dead-letter-routing-key=" + SourceRabbitMqNames.MAINTENANCE_DEAD_LETTER_ROUTING_KEY);
+                    "app.rabbitmq.sources.maintenance.dead-letter-routing-key=" + SourceRabbitMqNames.MAINTENANCE_DEAD_LETTER_ROUTING_KEY,
+                    "app.rabbitmq.sources.stock.exchange=" + SourceRabbitMqNames.STOCK_EXCHANGE,
+                    "app.rabbitmq.sources.stock.routing-key=" + SourceRabbitMqNames.STOCK_ROUTING_PATTERN,
+                    "app.rabbitmq.sources.stock.queue=" + SourceRabbitMqNames.STOCK_QUEUE,
+                    "app.rabbitmq.sources.stock.dead-letter-exchange=" + SourceRabbitMqNames.STOCK_DEAD_LETTER_EXCHANGE,
+                    "app.rabbitmq.sources.stock.dead-letter-queue=" + SourceRabbitMqNames.STOCK_DEAD_LETTER_QUEUE,
+                    "app.rabbitmq.sources.stock.dead-letter-routing-key=" + SourceRabbitMqNames.STOCK_DEAD_LETTER_ROUTING_KEY);
 
     // --- contrato ---
 
@@ -201,6 +207,23 @@ class MessagingLayerTest {
         assertEquals("SYSTEM", dueSoon.actor().kind(), "el trabajo diario no tiene persona detras");
         assertNull(dueSoon.correlationId());
         assertEquals("2026-09-29", dueSoon.data().get("entityId"));
+
+        SourceEnvelope belowMinimum = convert(fixture("contracts/mto-stock/material-below-minimum.json"));
+        assertEquals("mto-stock", belowMinimum.origin());
+        assertEquals("STOCK_MATERIAL_BELOW_MINIMUM", belowMinimum.eventType());
+        assertEquals("material", belowMinimum.data().get("entityName"));
+        assertEquals("below-minimum", belowMinimum.data().get("eventName"));
+        assertEquals("almacen.operario", belowMinimum.actor().username());
+        @SuppressWarnings("unchecked") Map<String, Object> stockValues = (Map<String, Object>) belowMinimum.data().get("values");
+        assertEquals("GA70", stockValues.get("materialCode"));
+        assertEquals(8.0, ((Number) stockValues.get("availableAfter")).doubleValue(), 0.0001);
+        assertEquals("OUTPUT", stockValues.get("operation"));
+
+        SourceEnvelope released = convert(fixture("contracts/mto-stock/reservation-released.json"));
+        assertEquals("SERVICE", released.actor().kind(), "mto-maintenance libera con su cuenta de servicio");
+        assertEquals("service-account-mto-maintenance-svc", released.actor().username());
+        @SuppressWarnings("unchecked") Map<String, Object> reservationValues = (Map<String, Object>) released.data().get("values");
+        assertEquals("service-account-mto-maintenance-svc", reservationValues.get("createdBy"));
     }
 
     // --- consumidor ---
@@ -315,12 +338,13 @@ class MessagingLayerTest {
                     && b.getRoutingKey().equals(SourceRabbitMqNames.MASTER_DATA_ROUTING_PATTERN)
                     && b.getDestination().equals(SourceRabbitMqNames.MASTER_DATA_QUEUE)));
             assertEquals(List.of(SourceRabbitMqNames.CONFIGURATION_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.MAINTENANCE_DEAD_LETTER_EXCHANGE,
-                            SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.USERS_DEAD_LETTER_EXCHANGE),
+                            SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.STOCK_DEAD_LETTER_EXCHANGE,
+                            SourceRabbitMqNames.USERS_DEAD_LETTER_EXCHANGE),
                     topology.getDeclarablesByType(DirectExchange.class).stream().map(DirectExchange::getName).sorted().toList());
 
-            // Las otras tres fuentes de RabbitMQ: cada una con su exchange (el del productor), su cola y sus dead letters.
+            // Las otras cuatro fuentes de RabbitMQ: cada una con su exchange (el del productor), su cola y sus dead letters.
             assertEquals(List.of(SourceRabbitMqNames.CONFIGURATION_EXCHANGE, SourceRabbitMqNames.MAINTENANCE_EXCHANGE,
-                            SourceRabbitMqNames.MASTER_DATA_EXCHANGE, SourceRabbitMqNames.USERS_EXCHANGE),
+                            SourceRabbitMqNames.MASTER_DATA_EXCHANGE, SourceRabbitMqNames.STOCK_EXCHANGE, SourceRabbitMqNames.USERS_EXCHANGE),
                     topology.getDeclarablesByType(TopicExchange.class).stream().map(TopicExchange::getName).sorted().toList());
             for (String[] source : new String[][]{
                     {SourceRabbitMqNames.CONFIGURATION_EXCHANGE, SourceRabbitMqNames.CONFIGURATION_ROUTING_PATTERN, SourceRabbitMqNames.CONFIGURATION_QUEUE,
@@ -328,7 +352,9 @@ class MessagingLayerTest {
                     {SourceRabbitMqNames.USERS_EXCHANGE, SourceRabbitMqNames.USERS_ROUTING_PATTERN, SourceRabbitMqNames.USERS_QUEUE,
                             SourceRabbitMqNames.USERS_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.USERS_DEAD_LETTER_QUEUE},
                     {SourceRabbitMqNames.MAINTENANCE_EXCHANGE, SourceRabbitMqNames.MAINTENANCE_ROUTING_PATTERN, SourceRabbitMqNames.MAINTENANCE_QUEUE,
-                            SourceRabbitMqNames.MAINTENANCE_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.MAINTENANCE_DEAD_LETTER_QUEUE}}) {
+                            SourceRabbitMqNames.MAINTENANCE_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.MAINTENANCE_DEAD_LETTER_QUEUE},
+                    {SourceRabbitMqNames.STOCK_EXCHANGE, SourceRabbitMqNames.STOCK_ROUTING_PATTERN, SourceRabbitMqNames.STOCK_QUEUE,
+                            SourceRabbitMqNames.STOCK_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.STOCK_DEAD_LETTER_QUEUE}}) {
                 Queue sourceQueue = queues.stream().filter(q -> q.getName().equals(source[2])).findFirst().orElseThrow();
                 assertEquals(source[3], sourceQueue.getArguments().get(SourceRabbitMqNames.ARG_DEAD_LETTER_EXCHANGE));
                 assertTrue(queues.stream().anyMatch(q -> q.getName().equals(source[4])));
@@ -338,6 +364,7 @@ class MessagingLayerTest {
             assertTrue(context.containsBean("configurationSourceConsumer"));
             assertTrue(context.containsBean("usersSourceConsumer"));
             assertTrue(context.containsBean("maintenanceSourceConsumer"));
+            assertTrue(context.containsBean("stockSourceConsumer"));
 
             assertEquals(1, context.getBeansOfType(AmqpAdmin.class).size());
             assertTrue(context.containsBean("masterDataSourceConsumer"));
@@ -357,17 +384,20 @@ class MessagingLayerTest {
         });
         contextRunner.withPropertyValues("app.rabbitmq.sources.users.listener-enabled=false",
                 "app.rabbitmq.sources.configuration.listener-enabled=false",
-                "app.rabbitmq.sources.maintenance.listener-enabled=false").run(context -> {
+                "app.rabbitmq.sources.maintenance.listener-enabled=false",
+                "app.rabbitmq.sources.stock.listener-enabled=false").run(context -> {
             assertTrue(context.containsBean("masterDataSourceConsumer"));
             assertFalse(context.containsBean("configurationSourceConsumer"));
             assertFalse(context.containsBean("usersSourceConsumer"));
             assertFalse(context.containsBean("maintenanceSourceConsumer"));
+            assertFalse(context.containsBean("stockSourceConsumer"));
         });
         contextRunner.withPropertyValues("app.rabbitmq.enabled=false").run(context -> {
             assertFalse(context.containsBean("masterDataSourceConsumer"));
             assertFalse(context.containsBean("configurationSourceConsumer"));
             assertFalse(context.containsBean("usersSourceConsumer"));
             assertFalse(context.containsBean("maintenanceSourceConsumer"));
+            assertFalse(context.containsBean("stockSourceConsumer"));
             assertFalse(context.containsBean("sourceTopology"));
             assertFalse(context.containsBean(RabbitListenerContainerFactoryNames.SOURCES));
         });

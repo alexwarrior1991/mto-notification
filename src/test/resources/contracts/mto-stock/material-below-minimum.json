@@ -1,0 +1,31 @@
+{
+  "operationId": "f0000000-0000-4000-8000-000000000001",
+  "referenceId": "material-b0000000-0000-4000-8000-000000000001",
+  "origin": "mto-stock",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "STOCK_MATERIAL_BELOW_MINIMUM",
+  "data": {
+    "entityName": "material",
+    "entityId": "b0000000-0000-4000-8000-000000000001",
+    "eventName": "below-minimum",
+    "values": {
+      "materialId": "b0000000-0000-4000-8000-000000000001",
+      "materialCode": "GA70",
+      "materialName": "Grapa de atirantado 70",
+      "unit": "ud",
+      "minimumStockLevel": 10.000000,
+      "availableBefore": 12.000000,
+      "availableAfter": 8.000000,
+      "quantity": 4.000000,
+      "operation": "OUTPUT",
+      "warehouseId": "c0000000-0000-4000-8000-000000000001"
+    }
+  },
+  "messageHash": "8b590ef375c9611d7dd2750f179007199e5228f18885235f61591a260ad7b8b8",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000041",
+    "username": "almacen.operario",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

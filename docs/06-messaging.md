@@ -9,7 +9,7 @@
 | Trabajos de `mto-configuration` (`job.finished`) | `mto.configuration.exchange`, `mto.configuration.#` → `mto.notification.configuration.queue` | Fase 2d |
 | `mto-users` | `mto.users.exchange`, `mto.users.#` → `mto.notification.users.queue` | Fase 2d |
 | `mto-maintenance` | `mto.maintenance.exchange`, `mto.maintenance.#` → `mto.notification.maintenance.queue` | Fase 3b |
-| `mto-stock` | `mto.stock.exchange` → `mto.notification.stock.queue` | Fase 4 |
+| `mto-stock` | `mto.stock.exchange`, `mto.stock.#` → `mto.notification.stock.queue` | Fase 4b |
 
 Cada cola lleva su DLX/DLQ (`<cola>.dlx`, `<cola>.dlq`), como las de `mto-stock` y
 `mto-maintenance`, y este servicio es su dueño; el exchange se declara en los dos lados con los
@@ -106,6 +106,23 @@ desactivado y unos preventivos ya vencidos son `WARNING`. El aviso diario de pre
 actor `SYSTEM` y sin correlación, y su `operationId` sale de la fecha: el segundo del mismo día es
 un duplicado en el inbox. Un evento de ese exchange que este servicio aún no conoce se registra
 igualmente con su tipo y sus valores.
+
+### `mto-stock`
+
+`StockSourceAdapter` escucha `mto.stock.#` (`docs/06-messaging.md` de `mto-stock`, *Published
+events*): los cuatro eventos de su outbox, con la persona que lo hizo (o la cuenta de servicio de
+`mto-maintenance`, `service-account-mto-maintenance-svc`, que reserva y libera material en el
+almacén) y la correlación de la petición. `stock.material.below-minimum` es el disponible total de
+un material (la suma de sus almacenes) que acaba de cruzar por debajo de su mínimo, solo al cruzar;
+`stock.reservation.cancelled` y `stock.reservation.released` llevan `createdBy`, quien creó la
+reserva; `stock.adjustment.registered` lleva la dirección del ajuste y lo que escribió el operario.
+El sujeto es el material por su código, la reserva por su material y su proyecto, el ajuste por su
+material; del `values` se guarda todo, con las mismas claves de material, almacén y proyecto en los
+cuatro eventos. La gravedad: un material bajo mínimo, una reserva tocada por alguien distinto de
+quien la creó (`createdBy` frente al actor del sobre) y un ajuste negativo son `WARNING`; lo demás,
+`INFO`. Las entradas, las salidas, las transferencias y las reservas consumidas no publican:
+`mto-maintenance` ya cuenta lo que consume. Un evento de ese exchange que este servicio aún no
+conoce se registra igualmente.
 
 ### El correlador de usuarios
 
@@ -211,6 +228,9 @@ credencial. El actor es `SERVICE` cuando el cliente resuelto es `mto-users-svc`
 | `maintenance-material-stock-unavailable` | `maintenance.material.failed`, `maintenance.material.in-doubt` | `mto-maintenance-manager` | bandeja; freno 1 h por orden |
 | `maintenance-asset-disabled` | `maintenance.asset.disabled` | `mto-maintenance-manager` | bandeja |
 | `maintenance-preventive-due-soon` | `maintenance.preventive.due-soon` (uno al día) | `mto-maintenance-manager` | bandeja, correo |
+| `stock-material-below-minimum` | `stock.material.below-minimum` | `mto-warehouse-admin` | bandeja, correo; freno 24 h por material |
+| `stock-reservation-touched-by-someone-else` | `stock.reservation.cancelled` o `released` de una reserva creada por `service-account-mto-maintenance-svc` (`vars['maintenance-service-account']`) por alguien que no es esa cuenta | `mto-maintenance-manager` | bandeja, correo |
+| `stock-large-negative-adjustment` | `stock.adjustment.registered` con `direction == NEGATIVE` y `quantity >= vars['large-adjustment-threshold']` (100) | `mto-warehouse-admin` | bandeja, correo |
 | `system-source-stalled`, `system-delivery-dead` | los eventos del propio servicio | `mto-ops` | bandeja, correo |
 
 Registro sin aviso: `access.login`, `access.logout`, las ráfagas pequeñas, `users.user.updated`,
@@ -218,7 +238,9 @@ Registro sin aviso: `access.login`, `access.logout`, las ráfagas pequeñas, `us
 de un cambio hecho desde `mto-users` (fundidos con el de `mto-users`, que es el que avisa), y de
 mantenimiento las transiciones ordinarias de una orden (planificar, iniciar), los defectos leves o
 medios y sus transiciones, las inspecciones `OK`, un punto de checklist en `DEFECT` y el defecto
-que genera una inspección (`maintenance.inspection.defect-created`: el propio defecto ya avisa).
+que genera una inspección (`maintenance.inspection.defect-created`: el propio defecto ya avisa), y
+de almacén una reserva cancelada o liberada por quien la creó y un ajuste positivo o negativo por
+debajo del umbral.
 
 ## Correo
 

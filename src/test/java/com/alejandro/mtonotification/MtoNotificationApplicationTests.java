@@ -112,7 +112,7 @@ class MtoNotificationApplicationTests extends PostgreSQLTestContainer {
                 NotificationFactory.class)) {
             assertNotNull(context.getBean(service), service.getSimpleName());
         }
-        assertEquals(List.of("configuration", "maintenance", "master-data", "users"), context.getBeansOfType(ActivitySourceAdapter.class).values().stream()
+        assertEquals(List.of("configuration", "maintenance", "master-data", "stock", "users"), context.getBeansOfType(ActivitySourceAdapter.class).values().stream()
                 .map(ActivitySourceAdapter::sourceId).sorted().toList(), "las fuentes de RabbitMQ hasta esta fase");
         assertEquals(2, context.getBeansOfType(DerivedEventDetector.class).size(), "la racha de accesos y el correlador de usuarios");
         assertFalse(context.getBean(RuleRepository.class).rules().isEmpty(), "el YAML de reglas se carga al arrancar");

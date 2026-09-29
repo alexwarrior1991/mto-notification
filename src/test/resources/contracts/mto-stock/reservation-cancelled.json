@@ -1,0 +1,37 @@
+{
+  "operationId": "f0000000-0000-4000-8000-000000000002",
+  "referenceId": "reservation-d0000000-0000-4000-8000-000000000001",
+  "origin": "mto-stock",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "STOCK_RESERVATION_CANCELLED",
+  "data": {
+    "entityName": "reservation",
+    "entityId": "d0000000-0000-4000-8000-000000000001",
+    "eventName": "cancelled",
+    "values": {
+      "materialId": "b0000000-0000-4000-8000-000000000001",
+      "materialCode": "GA70",
+      "materialName": "Grapa de atirantado 70",
+      "unit": "ud",
+      "warehouseId": "c0000000-0000-4000-8000-000000000001",
+      "warehouseCode": "ALM-HZL",
+      "warehouseName": "Almacen Herzliya",
+      "projectId": "50000000-0000-4000-8000-000000000001",
+      "projectCode": "EP-6",
+      "projectName": "Paquete de ejecucion 6",
+      "quantity": 4.000000,
+      "status": "CANCELLED",
+      "reservedAt": "2026-09-28T10:00:00Z",
+      "releasedAt": "2026-09-29T09:00:00Z",
+      "createdBy": "service-account-mto-maintenance-svc",
+      "createdAt": "2026-09-28T10:00:00Z"
+    }
+  },
+  "messageHash": "2c2cb61f81375cb7a0ff9038adcd5dd23f23747ce3c71af0a3a8c9b1702e2732",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000042",
+    "username": "almacen.responsable",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

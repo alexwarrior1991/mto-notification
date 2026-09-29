@@ -28,10 +28,17 @@
   urgente, asignación a la persona, órdenes cerradas, defectos graves y críticos, inspecciones,
   turnos, material sin existencias o sin respuesta del almacén, activos desactivados, preventivos
   a vencer), con los dieciséis ejemplos del productor como fixtures de contrato.
+- **Fase 4a** (`mto-stock`): el mismo outbox y cuatro eventos propios: el material cuyo disponible
+  total cruza por debajo de su mínimo (con la fila del material bloqueada para que el cruce lo vea
+  una sola operación), la reserva cancelada o liberada con quien la creó, el ajuste de inventario;
+  y los perfiles de almacén con sus permisos de notificación.
+- **Fase 4b**: la cola de `mto-stock`, `StockSourceAdapter` y sus reglas (bajo mínimo al almacén
+  con correo y freno de un día por material, la reserva de mantenimiento tocada por otro al
+  responsable de mantenimiento, el ajuste negativo grande al almacén), con los cuatro ejemplos del
+  productor como fixtures de contrato.
 
 ## Siguiente
 
-- **Fase 4**: el outbox de `mto-stock` y su adaptador y sus reglas.
 - **Fase 5** (`mto-backoffice`): la campana con el contador, la bandeja (`notificaciones`) y el
   registro (`actividad`).
 

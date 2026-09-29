@@ -42,6 +42,15 @@ public final class SourceRabbitMqNames {
     public static final String MAINTENANCE_DEAD_LETTER_QUEUE = MAINTENANCE_QUEUE + ".dlq";
     public static final String MAINTENANCE_DEAD_LETTER_ROUTING_KEY = MAINTENANCE_QUEUE + ".dlq";
 
+    /** Lo que mto-stock cuenta de si mismo: un material bajo minimo, reservas canceladas o liberadas y ajustes. */
+    public static final String STOCK_SOURCE = "stock";
+    public static final String STOCK_EXCHANGE = "mto.stock.exchange";
+    public static final String STOCK_ROUTING_PATTERN = "mto.stock.#";
+    public static final String STOCK_QUEUE = "mto.notification.stock.queue";
+    public static final String STOCK_DEAD_LETTER_EXCHANGE = STOCK_QUEUE + ".dlx";
+    public static final String STOCK_DEAD_LETTER_QUEUE = STOCK_QUEUE + ".dlq";
+    public static final String STOCK_DEAD_LETTER_ROUTING_KEY = STOCK_QUEUE + ".dlq";
+
     public static final String ARG_DEAD_LETTER_EXCHANGE = "x-dead-letter-exchange";
     public static final String ARG_DEAD_LETTER_ROUTING_KEY = "x-dead-letter-routing-key";
 

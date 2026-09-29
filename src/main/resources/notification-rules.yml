@@ -22,6 +22,11 @@ variables:
   # El cliente con el que mto-users administra el realm: lo que no venga de el es un cambio
   # hecho fuera de la aplicacion. app.notification.rules.variables lo pisa por entorno.
   users-service-client-id: mto-users-svc
+  # La cuenta de servicio con la que mto-maintenance reserva y libera material en el almacen: una
+  # reserva suya tocada por otra persona deja a su orden sin material.
+  maintenance-service-account: service-account-mto-maintenance-svc
+  # Un ajuste negativo de esta cantidad o mas, en la unidad del material, merece aviso al almacen.
+  large-adjustment-threshold: 100
 
 rules:
 
@@ -333,6 +338,43 @@ rules:
     title: "#{payload.count} preventivos vencen en #{payload.horizonDays} dias#{payload.overdueCount > 0 ? ' (' + payload.overdueCount + ' ya vencidos)' : ''}"
     body: "A #{payload.date} hay #{payload.count} activos con el preventivo a vencer en los proximos #{payload.horizonDays} dias, #{payload.overdueCount} de ellos ya vencidos o nunca revisados. Los primeros: #{payload.assets.![assetCode]}."
     link: "/mantenimiento/activos"
+
+  # --- Almacen (mto-stock) --------------------------------------------------------------------------
+  # Lo que mto-stock cuenta desde su outbox. Las entradas, las salidas y las transferencias no
+  # publican; una reserva liberada o cancelada por quien la creo y un ajuste por debajo del umbral
+  # se registran sin aviso.
+
+  - key: stock-material-below-minimum
+    event: stock.material.below-minimum
+    severity: WARNING
+    audiences: [PROFILE:mto-warehouse-admin]
+    channels: [inbox, email]
+    title: "Material #{payload.materialCode} por debajo del minimo"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha dejado #{payload.materialCode}#{payload.materialName != null ? ' (' + payload.materialName + ')' : ''} en #{payload.availableAfter} #{payload.unit} disponibles, por debajo del minimo de #{payload.minimumStockLevel}#{payload.operation == 'RESERVATION' ? ', al reservar ' : ', al dar salida a '}#{payload.quantity} #{payload.unit}."
+    link: "/almacen/materiales"
+    throttle:
+      window: 24h
+      key: "#{payload.materialId}"
+
+  - key: stock-reservation-touched-by-someone-else
+    event: [stock.reservation.cancelled, stock.reservation.released]
+    when: "payload.createdBy == vars['maintenance-service-account'] and event.actorUsername != vars['maintenance-service-account']"
+    severity: WARNING
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox, email]
+    title: "Reserva de mantenimiento #{event.type == 'stock.reservation.cancelled' ? 'cancelada' : 'liberada'}: #{payload.materialCode} para #{payload.projectCode}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'stock.reservation.cancelled' ? 'cancelado' : 'liberado'} en el almacen la reserva de #{payload.quantity} #{payload.unit} de #{payload.materialCode} para #{payload.projectCode} que habia hecho mantenimiento (#{payload.createdBy}). La linea de material de su orden se queda sin reserva: conviene sincronizarla."
+    link: "/almacen/reservas"
+
+  - key: stock-large-negative-adjustment
+    event: stock.adjustment.registered
+    when: "payload.direction == 'NEGATIVE' and payload.quantity >= vars['large-adjustment-threshold']"
+    severity: WARNING
+    audiences: [PROFILE:mto-warehouse-admin]
+    channels: [inbox, email]
+    title: "Ajuste negativo de #{payload.quantity} #{payload.unit} de #{payload.materialCode}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha registrado un ajuste negativo de #{payload.quantity} #{payload.unit} de #{payload.materialCode}#{payload.materialName != null ? ' (' + payload.materialName + ')' : ''} en #{payload.warehouseCode}#{payload.externalReference != null ? ' (' + payload.externalReference + ')' : ''}#{payload.notes != null ? ': ' + payload.notes : ''}"
+    link: "/almacen/movimientos"
 
   # --- El propio servicio -------------------------------------------------------------------------
 
