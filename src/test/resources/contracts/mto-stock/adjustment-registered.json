@@ -1,0 +1,35 @@
+{
+  "operationId": "f0000000-0000-4000-8000-000000000004",
+  "referenceId": "adjustment-e0000000-0000-4000-8000-000000000001",
+  "origin": "mto-stock",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "STOCK_ADJUSTMENT_REGISTERED",
+  "data": {
+    "entityName": "adjustment",
+    "entityId": "e0000000-0000-4000-8000-000000000001",
+    "eventName": "registered",
+    "values": {
+      "materialId": "b0000000-0000-4000-8000-000000000001",
+      "materialCode": "GA70",
+      "materialName": "Grapa de atirantado 70",
+      "unit": "ud",
+      "warehouseId": "c0000000-0000-4000-8000-000000000001",
+      "warehouseCode": "ALM-HZL",
+      "warehouseName": "Almacen Herzliya",
+      "direction": "NEGATIVE",
+      "movementType": "NEGATIVE_ADJUSTMENT",
+      "quantity": 3.000000,
+      "signedQuantity": -3.000000,
+      "occurredAt": "2026-09-29T08:45:00Z",
+      "externalReference": "RECUENTO-2026-39",
+      "notes": "Recuento semanal: 3 unidades danadas"
+    }
+  },
+  "messageHash": "66e0418474a013fff3e70499f96d14bb36154a7d16769e544331111ee80d0859",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000042",
+    "username": "almacen.responsable",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

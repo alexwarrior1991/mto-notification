@@ -24,8 +24,8 @@ línea), los trabajos de `mto-configuration` (`job.finished`, un aviso a quien l
 acciones administrativas de `mto-users` con la persona que las hizo, el lector de eventos de
 Keycloak (accesos y administración del realm, con rachas de accesos fallidos) y el correlador que
 funde el evento de Keycloak con el de `mto-users` del mismo cambio, las reglas en YAML, la bandeja
-por persona, el correo por Mailpit, la retención y la API de administración. Lo que publican
-`mto-maintenance` y `mto-stock` llega en las fases 3 y 4
+por persona, el correo por Mailpit, la retención y la API de administración, y lo que publican
+`mto-maintenance` y `mto-stock`. Quedan la campana y las pantallas del backoffice
 ([`docs/05-development-roadmap.md`](docs/05-development-roadmap.md)).
 
 ## Qué hace
@@ -127,7 +127,7 @@ frenos por regla y la marca del lector. Detalle en [`docs/03-database.md`](docs/
 | `mto-users` | Cola propia `mto.notification.users.queue` sobre `mto.users.exchange` (`mto.users.#`) | Una línea por acción administrativa con la persona; el evento de administración de Keycloak del mismo cambio se funde con ella |
 | Accesos y administración de Keycloak | Sondeo de la Admin API cada 20 s con `mto-notification-svc` (`view-events`), marca de agua por fuente y arrendamiento | Idempotente por huella del evento; tres fallos seguidos son una racha; un cambio hecho desde la consola es «fuera de la aplicación» |
 | `mto-maintenance` | Cola propia `mto.notification.maintenance.queue` sobre `mto.maintenance.exchange` (`mto.maintenance.#`) | Una línea por evento de su outbox (órdenes y sus transiciones, defectos, inspecciones, turnos, líneas de material, activos desactivados allí, el aviso diario de preventivos) con la persona y la correlación de la petición |
-| `mto-stock` | Fase 4 | |
+| `mto-stock` | Cola propia `mto.notification.stock.queue` sobre `mto.stock.exchange` (`mto.stock.#`) | Un material cuyo disponible total cae por debajo de su mínimo (solo al cruzar), una reserva cancelada o liberada (con quien la creó) y un ajuste de inventario, con la persona o la cuenta de servicio de `mto-maintenance` y la correlación de la petición |
 
 Todo en [`docs/06-messaging.md`](docs/06-messaging.md), reglas incluidas.
 

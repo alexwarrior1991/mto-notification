@@ -88,10 +88,10 @@ import static org.mockito.Mockito.when;
 
 /**
  * Los servicios con dobles: el motor de reglas, la ingesta, los adaptadores de Keycloak, de
- * datos maestros, de los trabajos de configuracion, de mto-users y de mto-maintenance (estos tres
- * con los ejemplos que cada productor versiona; el ultimo, ademas, con sus reglas reales pasando
- * por el motor), el detector de rachas, el correlador de usuarios, el despachador y el
- * resolutor de audiencias. Lo que decide la base de datos (idempotencia, rafagas, frenos, la
+ * datos maestros, de los trabajos de configuracion, de mto-users, de mto-maintenance y de mto-stock
+ * (estos cuatro con los ejemplos que cada productor versiona; los dos ultimos, ademas, con sus
+ * reglas reales pasando por el motor), el detector de rachas, el correlador de usuarios, el
+ * despachador y el resolutor de audiencias. Lo que decide la base de datos (idempotencia, rafagas, frenos, la
  * fusion en si) se prueba contra PostgreSQL en los {@code *DataJpaTest}.
  */
 class BusinessLayerTest {
@@ -1104,6 +1104,171 @@ class BusinessLayerTest {
         private SourceEnvelope maintenanceEnvelope(Map<String, Object> data) {
             return new SourceEnvelope(UUID.randomUUID(), "ref", "mto-maintenance", Instant.parse("2026-09-29T09:00:00Z"), "MAINTENANCE_X",
                     data, "hash", new SourceActor("6f1b1c8e-0000-4000-8000-000000000031", "mantenimiento.tecnico", "PERSON"), "req-1");
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Fuente mto-stock
+    // ---------------------------------------------------------------------------------------
+
+    @Nested
+    class Stock {
+
+        private final ActivityIngestor ingestor = mock(ActivityIngestor.class);
+        private final StockSourceAdapter adapter = new StockSourceAdapter(ingestor);
+        private final SourceEventContext context = new SourceEventContext("stock", null, "mto.stock.material.below-minimum");
+
+        @Test
+        void theBelowMinimumExampleBecomesAWarningAboutTheMaterialWithThePersonWhoTookItOut() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-stock/material-below-minimum.json"), context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals(ActivityTypes.STOCK_MATERIAL_BELOW_MINIMUM, draft.type());
+            assertEquals(ActivitySeverity.WARNING, draft.severity());
+            assertEquals("mto-stock", draft.sourceService());
+            assertEquals("f0000000-0000-4000-8000-000000000001", draft.sourceEventId());
+            assertEquals(Instant.parse("2026-09-29T09:00:00Z"), draft.occurredAt());
+            assertEquals(Actor.person("almacen.operario", "6f1b1c8e-0000-4000-8000-000000000041"), draft.actor());
+            assertEquals(Subject.of("material", "b0000000-0000-4000-8000-000000000001", "GA70"), draft.subject());
+            assertEquals("8c3b8c1a-1111-4222-8333-444444444444", draft.correlationId(), "el X-Correlation-Id de la peticion");
+            assertEquals("material", draft.payload().get("entityName"));
+            assertEquals("below-minimum", draft.payload().get("eventName"));
+            assertEquals("OUTPUT", draft.payload().get("operation"));
+            assertEquals(8.0, ((Number) draft.payload().get("availableAfter")).doubleValue(), 0.0001);
+            assertEquals(10.0, ((Number) draft.payload().get("minimumStockLevel")).doubleValue(), 0.0001);
+            assertEquals("c0000000-0000-4000-8000-000000000001", draft.payload().get("warehouseId"));
+        }
+
+        @Test
+        void aReservationTouchedBySomebodyElseIsAWarningAndOneReleasedByItsCreatorIsInfo() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-stock/reservation-cancelled.json"), context);
+            adapter.handle(fixture("contracts/mto-stock/reservation-released.json"), context);
+
+            ArgumentCaptor<ActivityEventDraft> drafts = ArgumentCaptor.forClass(ActivityEventDraft.class);
+            verify(ingestor, times(2)).ingest(drafts.capture());
+            ActivityEventDraft cancelled = drafts.getAllValues().get(0);
+            assertEquals(ActivityTypes.STOCK_RESERVATION_CANCELLED, cancelled.type());
+            assertEquals(ActivitySeverity.WARNING, cancelled.severity(), "la creo mantenimiento y la cancela una persona del almacen");
+            assertEquals(Subject.of("reservation", "d0000000-0000-4000-8000-000000000001", "GA70 EP-6"), cancelled.subject());
+            assertEquals("service-account-mto-maintenance-svc", cancelled.payload().get("createdBy"));
+            assertEquals("almacen.responsable", cancelled.actor().username());
+            assertEquals(4.0, ((Number) cancelled.payload().get("quantity")).doubleValue(), 0.0001);
+            ActivityEventDraft released = drafts.getAllValues().get(1);
+            assertEquals(ActivityTypes.STOCK_RESERVATION_RELEASED, released.type());
+            assertEquals(ActivitySeverity.INFO, released.severity(), "la libera quien la creo");
+            assertEquals(ActorKind.SERVICE, released.actor().kind());
+            assertEquals("service-account-mto-maintenance-svc", released.actor().username());
+        }
+
+        @Test
+        void anAdjustmentIsAWarningWhenNegativeAndInfoWhenPositiveAndAnEventWithoutEntityIsRefused() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-stock/adjustment-registered.json"), context);
+            adapter.handle(stockEnvelope("adjustment", "e0000000-0000-4000-8000-000000000002", "registered",
+                    Map.of("materialCode", "GA70", "direction", "POSITIVE", "quantity", 2)), context);
+
+            ArgumentCaptor<ActivityEventDraft> drafts = ArgumentCaptor.forClass(ActivityEventDraft.class);
+            verify(ingestor, times(2)).ingest(drafts.capture());
+            ActivityEventDraft negative = drafts.getAllValues().get(0);
+            assertEquals(ActivityTypes.STOCK_ADJUSTMENT_REGISTERED, negative.type());
+            assertEquals(ActivitySeverity.WARNING, negative.severity());
+            assertEquals(Subject.of("adjustment", "e0000000-0000-4000-8000-000000000001", "GA70"), negative.subject());
+            assertEquals("RECUENTO-2026-39", negative.payload().get("externalReference"));
+            assertEquals("Recuento semanal: 3 unidades danadas", negative.payload().get("notes"));
+            assertEquals(ActivitySeverity.INFO, drafts.getAllValues().get(1).severity());
+
+            assertThrows(UnprocessableSourceEventException.class,
+                    () -> adapter.handle(stockEnvelope(null, "x", "registered", Map.of()), context));
+        }
+
+        @Test
+        void theShippedStockRulesTellTheWarehouseAndMaintenanceWhatTheyShould() {
+            List<NotificationFactory.NotificationDraft> created = new ArrayList<>();
+            NotificationFactory factory = draft -> {
+                created.add(draft);
+                return Notification.builder().build();
+            };
+            ThrottleGate throttle = mock(ThrottleGate.class);
+            when(throttle.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+            RuleEngineImpl engine = new RuleEngineImpl(new YamlRuleRepository(new ClassPathResource("notification-rules.yml"), Map.of()),
+                    new RuleExpressionEvaluator(), throttle, factory);
+
+            ActivityEventDraft belowMinimum = draftOf(fixture("contracts/mto-stock/material-below-minimum.json"));
+            engine.evaluate(lineOf(belowMinimum), belowMinimum.payload());
+            assertEquals(List.of("stock-material-below-minimum"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+            NotificationFactory.NotificationDraft lowStock = created.getFirst();
+            assertEquals(List.of(Audience.profile("mto-warehouse-admin")), lowStock.audiences());
+            assertEquals(List.of("inbox", "email"), lowStock.channels());
+            assertEquals(ActivitySeverity.WARNING, lowStock.severity());
+            assertEquals("Material GA70 por debajo del minimo", lowStock.title());
+            assertTrue(lowStock.body().startsWith("almacen.operario ha dejado GA70 (Grapa de atirantado 70) en 8"), lowStock.body());
+            assertTrue(lowStock.body().contains("al dar salida a 4"), lowStock.body());
+            assertEquals("/almacen/materiales", lowStock.link());
+            verify(throttle).tryAcquire("stock-material-below-minimum", "b0000000-0000-4000-8000-000000000001", Duration.ofHours(24));
+
+            created.clear();
+            ActivityEventDraft cancelled = draftOf(fixture("contracts/mto-stock/reservation-cancelled.json"));
+            engine.evaluate(lineOf(cancelled), cancelled.payload());
+            assertEquals(List.of("stock-reservation-touched-by-someone-else"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+            NotificationFactory.NotificationDraft touched = created.getFirst();
+            assertEquals(List.of(Audience.profile("mto-maintenance-manager")), touched.audiences(), "a mantenimiento, que se queda sin material");
+            assertEquals(List.of("inbox", "email"), touched.channels());
+            assertEquals("Reserva de mantenimiento cancelada: GA70 para EP-6", touched.title());
+            assertTrue(touched.body().startsWith("almacen.responsable ha cancelado en el almacen la reserva de 4"), touched.body());
+            assertEquals("/almacen/reservas", touched.link());
+
+            created.clear();
+            ActivityEventDraft released = draftOf(fixture("contracts/mto-stock/reservation-released.json"));
+            engine.evaluate(lineOf(released), released.payload());
+            assertTrue(created.isEmpty(), "liberada por el mismo mantenimiento que la creo: nada que avisar");
+
+            created.clear();
+            ActivityEventDraft small = draftOf(fixture("contracts/mto-stock/adjustment-registered.json"));
+            engine.evaluate(lineOf(small), small.payload());
+            assertTrue(created.isEmpty(), "un ajuste de 3 unidades no llega al umbral");
+
+            created.clear();
+            ActivityEventDraft large = draftOf(stockEnvelope("adjustment", "e0000000-0000-4000-8000-000000000003", "registered",
+                    Map.of("materialCode", "GA70", "materialName", "Grapa de atirantado 70", "unit", "ud", "warehouseCode", "ALM-HZL",
+                            "direction", "NEGATIVE", "quantity", 150, "externalReference", "RECUENTO-2026-39")));
+            engine.evaluate(lineOf(large), large.payload());
+            assertEquals(List.of("stock-large-negative-adjustment"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+            assertEquals(List.of(Audience.profile("mto-warehouse-admin")), created.getFirst().audiences());
+            assertEquals("Ajuste negativo de 150 ud de GA70", created.getFirst().title());
+            assertTrue(created.getFirst().body().contains("en ALM-HZL (RECUENTO-2026-39)"), created.getFirst().body());
+            assertEquals("/almacen/movimientos", created.getFirst().link());
+        }
+
+        private ActivityEventDraft draftOf(SourceEnvelope envelope) {
+            ActivityIngestor recorder = mock(ActivityIngestor.class);
+            when(recorder.ingest(any())).thenReturn(Optional.empty());
+            new StockSourceAdapter(recorder).handle(envelope, context);
+            return ingested(recorder);
+        }
+
+        private ActivityEvent lineOf(ActivityEventDraft draft) {
+            ActivityEvent event = line(draft.sourceService(), draft.type(), draft.actor(), draft.subject().type(), draft.subject().id(), draft.occurredAt());
+            event.setSeverity(draft.severity());
+            event.setSubjectLabel(draft.subject().label());
+            event.setCorrelationId(draft.correlationId());
+            return event;
+        }
+
+        private SourceEnvelope stockEnvelope(String entityName, String entityId, String eventName, Map<String, Object> values) {
+            Map<String, Object> data = new java.util.LinkedHashMap<>();
+            if (entityName != null) {
+                data.put("entityName", entityName);
+            }
+            data.put("entityId", entityId);
+            data.put("eventName", eventName);
+            data.put("values", values);
+            return new SourceEnvelope(UUID.randomUUID(), "ref", "mto-stock", Instant.parse("2026-09-29T09:00:00Z"), "STOCK_X",
+                    data, "hash", new SourceActor("6f1b1c8e-0000-4000-8000-000000000042", "almacen.responsable", "PERSON"), "req-1");
         }
     }
 

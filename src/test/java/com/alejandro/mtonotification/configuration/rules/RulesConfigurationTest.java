@@ -59,7 +59,8 @@ class RulesConfigurationTest {
                 "maintenance-defect-critical", "maintenance-defect-high", "maintenance-inspection-unsafe", "maintenance-inspection-defect",
                 "maintenance-inspection-corrective-order", "maintenance-shift", "maintenance-material-no-stock",
                 "maintenance-material-rejected", "maintenance-material-stock-unavailable", "maintenance-asset-disabled",
-                "maintenance-preventive-due-soon")));
+                "maintenance-preventive-due-soon", "stock-material-below-minimum", "stock-reservation-touched-by-someone-else",
+                "stock-large-negative-adjustment")));
 
         NotificationRule job = repository.rules().stream().filter(rule -> rule.key().equals("configuration-job-finished")).findFirst().orElseThrow();
         assertEquals(List.of("USER:#{payload.createdBy}"), job.audiences(), "el trabajo avisa a quien lo lanzo");
@@ -77,6 +78,15 @@ class RulesConfigurationTest {
         NotificationRule stockUnavailable = repository.rules().stream().filter(rule -> rule.key().equals("maintenance-material-stock-unavailable")).findFirst().orElseThrow();
         assertEquals(Duration.ofHours(1), stockUnavailable.throttle().window(), "el almacen caido avisa una vez por orden y hora");
         assertTrue(stockUnavailable.matcher().matches(ActivityTypes.MAINTENANCE_MATERIAL_IN_DOUBT));
+
+        NotificationRule belowMinimum = repository.rules().stream().filter(rule -> rule.key().equals("stock-material-below-minimum")).findFirst().orElseThrow();
+        assertEquals(Duration.ofHours(24), belowMinimum.throttle().window(), "un material bajo minimo avisa una vez al dia");
+        assertEquals(List.of("inbox", "email"), belowMinimum.channels());
+        NotificationRule touched = repository.rules().stream().filter(rule -> rule.key().equals("stock-reservation-touched-by-someone-else")).findFirst().orElseThrow();
+        assertEquals(List.of("PROFILE:mto-maintenance-manager"), touched.audiences(), "la reserva de mantenimiento tocada por otro avisa a mantenimiento");
+        assertTrue(touched.matcher().matches(ActivityTypes.STOCK_RESERVATION_RELEASED));
+        assertEquals(100, repository.variables().get("large-adjustment-threshold"));
+        assertEquals("service-account-mto-maintenance-svc", repository.variables().get("maintenance-service-account"));
 
         NotificationRule streak = repository.rules().stream().filter(rule -> rule.key().equals("access-login-streak")).findFirst().orElseThrow();
         assertTrue(streak.matcher().matches(ActivityTypes.ACCESS_LOGIN_STREAK));

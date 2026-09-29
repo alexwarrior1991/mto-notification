@@ -205,8 +205,7 @@ app:
   rabbitmq:
     enabled: ${APP_RABBITMQ_ENABLED:true}
     # Una fuente por emisor: su exchange y su routing key son contrato del emisor; la cola, su
-    # DLX y su DLQ son de este servicio, que es quien consume. La fuente de mto-stock se anade con
-    # su fase.
+    # DLX y su DLQ son de este servicio, que es quien consume.
     sources:
       master-data:
         exchange: ${APP_RABBITMQ_MASTER_DATA_EXCHANGE:mto.master-data.exchange}
@@ -248,6 +247,17 @@ app:
         dead-letter-queue: ${APP_RABBITMQ_MAINTENANCE_DEAD_LETTER_QUEUE:mto.notification.maintenance.queue.dlq}
         dead-letter-routing-key: ${APP_RABBITMQ_MAINTENANCE_DEAD_LETTER_ROUTING_KEY:mto.notification.maintenance.queue.dlq}
         listener-enabled: ${APP_RABBITMQ_MAINTENANCE_LISTENER_ENABLED:true}
+      # Lo que mto-stock cuenta de si mismo (docs/06-messaging.md de ese repositorio): un material
+      # cuyo disponible cae por debajo de su minimo, una reserva cancelada o liberada y un ajuste de
+      # inventario. Sale de su outbox, con quien lo hizo y su correlacion.
+      stock:
+        exchange: ${APP_RABBITMQ_STOCK_EXCHANGE:mto.stock.exchange}
+        routing-key: "${APP_RABBITMQ_STOCK_ROUTING_KEY:mto.stock.#}"
+        queue: ${APP_RABBITMQ_STOCK_QUEUE:mto.notification.stock.queue}
+        dead-letter-exchange: ${APP_RABBITMQ_STOCK_DEAD_LETTER_EXCHANGE:mto.notification.stock.queue.dlx}
+        dead-letter-queue: ${APP_RABBITMQ_STOCK_DEAD_LETTER_QUEUE:mto.notification.stock.queue.dlq}
+        dead-letter-routing-key: ${APP_RABBITMQ_STOCK_DEAD_LETTER_ROUTING_KEY:mto.notification.stock.queue.dlq}
+        listener-enabled: ${APP_RABBITMQ_STOCK_LISTENER_ENABLED:true}
 
   # La Admin API de Keycloak: el lector de eventos de acceso y de administracion, y el directorio
   # con el que se resuelven las direcciones de una audiencia. Todo con la cuenta de servicio
