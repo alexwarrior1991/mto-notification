@@ -132,6 +132,7 @@ jobs:
             -e SPRING_FLYWAY_ENABLED=true \
             -e APP_RABBITMQ_ENABLED=false \
             -e MANAGEMENT_HEALTH_RABBIT_ENABLED=false \
+            -e MANAGEMENT_HEALTH_MAIL_ENABLED=false \
             -e KEYCLOAK_ISSUER_URI=http://localhost:8082/realms/mto \
             -e KEYCLOAK_CLIENT_ID=mto-notification-api \
             -e KEYCLOAK_AUDIENCE=mto-notification-api \

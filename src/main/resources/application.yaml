@@ -111,6 +111,10 @@ management:
     # que se recupera sola.
     rabbit:
       enabled: ${MANAGEMENT_HEALTH_RABBIT_ENABLED:false}
+    # Lo mismo con el SMTP: sin el, el correo espera en sus entregas y se reintenta; la bandeja y el
+    # registro siguen. Y el indicador abre una conexion SMTP en cada sonda.
+    mail:
+      enabled: ${MANAGEMENT_HEALTH_MAIL_ENABLED:false}
     # Los circuitos (el de Keycloak) entran como componente informativo, no deciden el global.
     circuitbreakers:
       enabled: true
