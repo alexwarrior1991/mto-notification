@@ -22,6 +22,7 @@ public record NotificationProperties(
         @NotBlank String rulesLocation,
         Rules rules,
         Access access,
+        Users users,
         Burst burst,
         Inbox inbox,
         Delivery delivery,
@@ -32,6 +33,7 @@ public record NotificationProperties(
     public NotificationProperties {
         rules = rules == null ? new Rules(Map.of()) : rules;
         access = access == null ? new Access(null) : access;
+        users = users == null ? new Users(null) : users;
         burst = burst == null ? new Burst(null, null, 0, null, true, null, null) : burst;
         inbox = inbox == null ? new Inbox(0, 0) : inbox;
         delivery = delivery == null ? new Delivery(true, null, null, 0, 0, null, null, null, true) : delivery;
@@ -54,6 +56,13 @@ public record NotificationProperties(
 
     /** @param threshold fallos que hacen racha; @param window en cuanto tiempo */
     public record Streak(@Min(2) int threshold, @NotNull Duration window) {
+    }
+
+    /** @param correlationWindow a cuanto pueden estar el evento de mto-users y el de Keycloak para ser el mismo cambio */
+    public record Users(Duration correlationWindow) {
+        public Users {
+            correlationWindow = correlationWindow == null ? Duration.ofMinutes(2) : correlationWindow;
+        }
     }
 
     /**

@@ -12,6 +12,9 @@ public interface KeycloakDirectoryClient {
 
     Optional<KeycloakUser> findUserByUsername(String username);
 
+    /** Por su id de Keycloak; vacio si ya no existe. */
+    Optional<KeycloakUser> findUserById(String id);
+
     /** Miembros directos de un rol de realm (Keycloak no expande compuestos aqui). */
     List<KeycloakUser> realmRoleMembers(String roleName, int first, int max);
 

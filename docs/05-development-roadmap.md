@@ -10,17 +10,19 @@
   de datos maestros con ráfagas, el lector de Keycloak (accesos y administración, marca de agua,
   idempotencia por huella, rachas), las reglas en YAML con sus frenos, la bandeja por persona, el
   correo con entregas reintentables, la retención y la API de administración.
-
-## Siguiente
-
 - **Fase 2b** (`mto-configuration`): `actor` y `correlationId` en el sobre (con el id del trabajo
   en los hilos de importación, para que una importación sea una ráfaga), el evento
   `configuration.job.finished`, las colas huérfanas fuera y los perfiles con sus permisos de
   notificación.
-- **Fase 2c** (`mto-users`): el evento propio `users.user.<acción>` con la persona.
-- **Fase 2d** (aquí): los adaptadores y las reglas de `configuration.job.finished` y de
-  `users.user.*`, y el correlador que funde el evento de Keycloak con el de `mto-users`
-  (`superseded_by`).
+- **Fase 2c** (`mto-users`): el evento propio `mto.users.<entidad>.<evento>` con la persona, y
+  los perfiles con sus permisos de notificación.
+- **Fase 2d**: las colas de los trabajos de `mto-configuration` y de `mto-users`, sus adaptadores
+  (`ConfigurationSourceAdapter`, `UsersSourceAdapter`) y sus reglas, el correlador que funde el
+  evento de Keycloak con el de `mto-users` (`superseded_by`, en cualquier orden de llegada), la
+  audiencia `USER_ID` y los ejemplos de cada productor como fixtures de contrato.
+
+## Siguiente
+
 - **Fases 3 y 4**: el outbox de `mto-maintenance` y el de `mto-stock`, y sus adaptadores y reglas.
 - **Fase 5** (`mto-backoffice`): la campana con el contador, la bandeja (`notificaciones`) y el
   registro (`actividad`).

@@ -15,6 +15,9 @@ public enum AudienceKind {
     /** Una persona, por su {@code preferred_username}. */
     USER,
 
+    /** Una persona, por su id de Keycloak (el {@code sub} del token): para lo que una fuente solo sabe decir por id. */
+    USER_ID,
+
     /** Un perfil: un rol compuesto de realm ({@code mto-maintenance-manager}), tal como viene en {@code realm_access.roles}. */
     PROFILE,
 

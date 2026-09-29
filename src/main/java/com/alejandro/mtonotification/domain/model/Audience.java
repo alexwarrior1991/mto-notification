@@ -5,7 +5,8 @@ import java.util.Optional;
 /**
  * A quien va una notificacion: una clase y una clave, y su forma serializada
  * {@code <KIND>:<clave>}, que es la que se guarda y la que el token de una persona reproduce al
- * leer la bandeja ({@code USER:alice}, {@code PROFILE:mto-admin}, {@code CLIENT_ROLE:mto-stock-api:stock-read}).
+ * leer la bandeja ({@code USER:alice}, {@code USER_ID:<sub>}, {@code PROFILE:mto-admin},
+ * {@code CLIENT_ROLE:mto-stock-api:stock-read}).
  */
 public record Audience(AudienceKind kind, String key) {
 
@@ -21,6 +22,11 @@ public record Audience(AudienceKind kind, String key) {
 
     public static Audience user(String username) {
         return new Audience(AudienceKind.USER, username);
+    }
+
+    /** La persona por su id de Keycloak: lo que las fuentes que no saben el nombre de usuario si saben. */
+    public static Audience userId(String id) {
+        return new Audience(AudienceKind.USER_ID, id);
     }
 
     public static Audience profile(String realmRole) {

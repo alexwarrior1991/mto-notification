@@ -1,0 +1,28 @@
+{
+  "operationId": "7c2e6a10-1b2c-4d3e-8f90-0a1b2c3d4e5f",
+  "referenceId": "user-2f1c9d1e-0000-4000-8000-000000000001",
+  "origin": "mto-users",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "USERS_USER_CREATED",
+  "data": {
+    "entityName": "user",
+    "entityId": "2f1c9d1e-0000-4000-8000-000000000001",
+    "eventName": "created",
+    "values": {
+      "targetUserId": "2f1c9d1e-0000-4000-8000-000000000001",
+      "targetUsername": "ana.nueva",
+      "enabled": true,
+      "temporaryCredential": true,
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ]
+    }
+  },
+  "messageHash": "ce931a882bbd4ea6854f812275b3e07160d0d127615fe23673098c1d30fa6ca9",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000002",
+    "username": "usuarios.responsable",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

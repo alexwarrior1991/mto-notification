@@ -13,6 +13,7 @@ import com.alejandro.mtonotification.domain.model.ActivityEventDraft;
 import com.alejandro.mtonotification.domain.model.ActivitySeverity;
 import com.alejandro.mtonotification.domain.model.ActivityTypes;
 import com.alejandro.mtonotification.domain.model.Actor;
+import com.alejandro.mtonotification.domain.model.ActorKind;
 import com.alejandro.mtonotification.domain.model.Subject;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.ActivityBurst;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.ActivityBurstStatus;
@@ -65,8 +66,9 @@ import static org.mockito.Mockito.verify;
 
 /**
  * El registro contra PostgreSQL: la idempotencia por {@code (source_service, source_event_id)}, los
- * CHECK del esquema, la racha derivada, las rafagas con su cierre en carrera, los frenos por regla,
- * el arrendamiento del lector y la purga. Todo lo que decide la base y no el codigo.
+ * CHECK del esquema, la racha derivada, la fusion del evento de Keycloak con el de mto-users, las
+ * rafagas con su cierre en carrera, los frenos por regla, el arrendamiento del lector y la purga.
+ * Todo lo que decide la base y no el codigo.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -89,8 +91,8 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
     @EnableConfigurationProperties({NotificationProperties.class, KeycloakProperties.class})
     @ComponentScan(basePackages = "com.alejandro.mtonotification.application.service.impl", useDefaultFilters = false,
             includeFilters = @ComponentScan.Filter(type = FilterType.REGEX, pattern = {
-                    ".*\\.JsonPayloads", ".*\\.ActivityIngestorImpl", ".*\\.FailedLoginStreakDetector", ".*\\.BurstAggregatorImpl",
-                    ".*\\.ThrottleGateImpl", ".*\\.RetentionPurgeImpl", ".*\\.SourceCursorServiceImpl"}))
+                    ".*\\.JsonPayloads", ".*\\.ActivityIngestorImpl", ".*\\.FailedLoginStreakDetector", ".*\\.UsersChangeCorrelator",
+                    ".*\\.BurstAggregatorImpl", ".*\\.ThrottleGateImpl", ".*\\.RetentionPurgeImpl", ".*\\.SourceCursorServiceImpl"}))
     static class RegistryServicesConfiguration {
     }
 
@@ -233,6 +235,53 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
         activityIngestor.ingest(failedLogin("alice", null, "w3", now));
 
         assertEquals(0, activityEventRepository.count(ActivityEventSpecification.typeEquals(ActivityTypes.ACCESS_LOGIN_STREAK)));
+    }
+
+    // --- el correlador de usuarios ---
+
+    @Test
+    void theKeycloakLineOfAChangeMadeFromTheApplicationIsSupersededWhicheverArrivesFirst() {
+        Instant now = Instant.now();
+        // mto-users primero, Keycloak despues: lo habitual, porque el lector sondea cada 20 s.
+        ActivityEvent users = activityIngestor.ingest(usersLine("u-1", ActivityTypes.USERS_PROFILE_ASSIGNED, now.minusSeconds(10),
+                Map.of("profile", "mto-users-viewer"))).orElseThrow();
+        ActivityEvent keycloak = activityIngestor.ingest(keycloakAdminLine("k-1", ActivityTypes.USERS_ADMIN_REALM_ROLES_ADDED,
+                ActorKind.SERVICE, "user", "id-alice", now)).orElseThrow();
+        assertEquals(users.getId(), reload(keycloak.getId()).getSupersededBy());
+        assertNull(reload(users.getId()).getSupersededBy(), "la linea con la persona es la que queda");
+
+        // Keycloak primero, mto-users despues.
+        ActivityEvent keycloakFirst = activityIngestor.ingest(keycloakAdminLine("k-2", ActivityTypes.USERS_ADMIN_USER_UPDATED,
+                ActorKind.SERVICE, "user", "id-alice", now.plusSeconds(20))).orElseThrow();
+        assertNull(reload(keycloakFirst.getId()).getSupersededBy());
+        ActivityEvent usersAfter = activityIngestor.ingest(usersLine("u-2", ActivityTypes.USERS_USER_DISABLED, now.plusSeconds(25), Map.of())).orElseThrow();
+        assertEquals(usersAfter.getId(), reload(keycloakFirst.getId()).getSupersededBy());
+
+        // Fuera de la ventana, o hecho desde la consola (una persona, no la cuenta de servicio): no se funde.
+        ActivityEvent late = activityIngestor.ingest(keycloakAdminLine("k-3", ActivityTypes.USERS_ADMIN_USER_UPDATED,
+                ActorKind.SERVICE, "user", "id-alice", now.plus(Duration.ofMinutes(10)))).orElseThrow();
+        ActivityEvent console = activityIngestor.ingest(keycloakAdminLine("k-4", ActivityTypes.USERS_ADMIN_USER_UPDATED,
+                ActorKind.PERSON, "user", "id-alice", now.plusSeconds(26))).orElseThrow();
+        assertNull(reload(late.getId()).getSupersededBy());
+        assertNull(reload(console.getId()).getSupersededBy());
+
+        assertEquals(4, activityEventRepository.count(ActivityEventSpecification.categoryEquals(ActivityCategory.USERS)
+                        .and(ActivityEventSpecification.notSuperseded())),
+                "las consultas esconden lo fundido: quedan las dos de mto-users, la tardia y la de la consola");
+        assertEquals(6, activityEventRepository.count(ActivityEventSpecification.categoryEquals(ActivityCategory.USERS)));
+    }
+
+    @Test
+    void aSessionClosedFromTheApplicationIsMatchedWithTheKeycloakLineOfThatSessionByItsPayload() {
+        Instant now = Instant.now();
+        ActivityEvent users = activityIngestor.ingest(usersLine("u-s", ActivityTypes.USERS_SESSION_REVOKED, now, Map.of("session", "sess-1"))).orElseThrow();
+        ActivityEvent keycloak = activityIngestor.ingest(keycloakAdminLine("k-s", ActivityTypes.USERS_ADMIN_SESSION_DELETED,
+                ActorKind.SERVICE, "session", "sess-1", now.plusSeconds(15))).orElseThrow();
+        ActivityEvent other = activityIngestor.ingest(keycloakAdminLine("k-o", ActivityTypes.USERS_ADMIN_SESSION_DELETED,
+                ActorKind.SERVICE, "session", "sess-2", now.plusSeconds(16))).orElseThrow();
+
+        assertEquals(users.getId(), reload(keycloak.getId()).getSupersededBy());
+        assertNull(reload(other.getId()).getSupersededBy(), "otra sesion es otro cambio");
     }
 
     // --- rafagas ---
@@ -400,6 +449,32 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
                 .subject(Subject.of("user", "id-" + username, username))
                 .ipAddress(ip)
                 .payload(Map.of("username", username, "error", "invalid_user_credentials"))
+                .build();
+    }
+
+    private static ActivityEventDraft usersLine(String operationId, String type, Instant at, Map<String, Object> detail) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>(Map.of("targetUserId", "id-alice", "targetUsername", "alice"));
+        payload.putAll(detail);
+        return ActivityEventDraft.builder()
+                .source("mto-users", operationId)
+                .type(type)
+                .occurredAt(at)
+                .actor(Actor.person("usuarios.responsable", "id-admin"))
+                .subject(Subject.of("user", "id-alice", "alice"))
+                .payload(payload)
+                .build();
+    }
+
+    private static ActivityEventDraft keycloakAdminLine(String fingerprint, String type, ActorKind actorKind, String subjectType,
+                                                        String subjectId, Instant at) {
+        Actor actor = actorKind == ActorKind.SERVICE ? Actor.service("mto-users-svc", "svc-id") : new Actor(ActorKind.PERSON, null, "admin-id");
+        return ActivityEventDraft.builder()
+                .source("keycloak-admin", fingerprint)
+                .type(type)
+                .occurredAt(at)
+                .actor(actor)
+                .subject(Subject.of(subjectType, subjectId))
+                .payload(Map.of("clientId", actorKind == ActorKind.SERVICE ? "mto-users-svc" : "admin-cli"))
                 .build();
     }
 

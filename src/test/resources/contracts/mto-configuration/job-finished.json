@@ -1,0 +1,36 @@
+{
+  "operationId": "b2c9e4d1-5a6f-4e7b-8c9d-0a1b2c3d4e5f",
+  "referenceId": "job-00000000-0000-4000-8000-0000000000aa",
+  "origin": "mto-configuration",
+  "creationDate": "2026-09-29T07:00:09Z",
+  "eventType": "CONFIGURATION_JOB_FINISHED",
+  "data": {
+    "entityName": "job",
+    "entityId": "00000000-0000-4000-8000-0000000000aa",
+    "eventName": "finished",
+    "values": {
+      "jobId": "00000000-0000-4000-8000-0000000000aa",
+      "type": "LOV_IMPORT",
+      "status": "COMPLETED_WITH_ERRORS",
+      "createdBy": "config.responsable",
+      "createdAt": "2026-09-29T07:00:00Z",
+      "startedAt": "2026-09-29T07:00:01Z",
+      "finishedAt": "2026-09-29T07:00:09Z",
+      "totalItems": 120,
+      "processedItems": 120,
+      "successfulItems": 118,
+      "failedItems": 2,
+      "fileName": "lov-import-00000000-0000-4000-8000-0000000000aa.json",
+      "trackId": null,
+      "mapperType": null,
+      "errorMessage": null
+    }
+  },
+  "messageHash": "4be647fb9090c1d1d883b95b5bee138154a0920ca54d5b38cafc70c3ff84a9d2",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000002",
+    "username": "config.responsable",
+    "kind": "PERSON"
+  },
+  "correlationId": "00000000-0000-4000-8000-0000000000aa"
+}

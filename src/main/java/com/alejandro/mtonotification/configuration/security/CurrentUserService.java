@@ -59,10 +59,11 @@ public class CurrentUserService {
 
     /**
      * Las claves de audiencia de la persona, tal como se guardan en {@code notification_audience}:
-     * {@code USER:<usuario>}, {@code PROFILE:<rol de realm>} por cada rol de {@code realm_access}
-     * (los perfiles son roles compuestos de realm, y el token trae su nombre) y
-     * {@code CLIENT_ROLE:<cliente>:<rol>} por cada rol de {@code resource_access}. Es lo que hace
-     * que la bandeja se resuelva al leer, sin expandir miembros al crear.
+     * {@code USER:<usuario>}, {@code USER_ID:<sub>} (para lo que una fuente solo sabe decir por id),
+     * {@code PROFILE:<rol de realm>} por cada rol de {@code realm_access} (los perfiles son roles
+     * compuestos de realm, y el token trae su nombre) y {@code CLIENT_ROLE:<cliente>:<rol>} por cada
+     * rol de {@code resource_access}. Es lo que hace que la bandeja se resuelva al leer, sin expandir
+     * miembros al crear.
      */
     public List<String> getAudienceKeys() {
         Optional<Jwt> jwt = getJwt();
@@ -71,6 +72,7 @@ public class CurrentUserService {
         }
         Set<String> keys = new LinkedHashSet<>();
         getUsername().ifPresent(username -> keys.add(Audience.user(username).toKey()));
+        getUserId().filter(id -> !id.isBlank()).ifPresent(id -> keys.add(Audience.userId(id).toKey()));
 
         Map<String, Object> realmAccess = jwt.get().getClaimAsMap(JwtClaimNames.REALM_ACCESS);
         for (String role : roles(realmAccess)) {

@@ -56,10 +56,12 @@ Las mismas tres capas que `mto-maintenance` bajo `com.alejandro.mtonotification`
   interfaces públicas), `mapper` (MapStruct, **entidad → respuesta solo**), `exception`.
   Las piezas de `service/impl`, en el orden en que pasa un evento: `SourceEventConsumer` (RabbitMQ)
   o `KeycloakEventsPollerImpl` → `InboxMessageServiceImpl` (`IdempotentSourceEventProcessor`) →
-  `DispatchingSourceEventHandler` → un `ActivitySourceAdapter` por fuente (`MasterDataSourceAdapter`,
-  `KeycloakLoginEventAdapter`, `KeycloakAdminEventAdapter`) → `ActivityIngestorImpl`
-  (`insert ... on conflict do nothing`; si insertó: `RuleEngineImpl` y los `DerivedEventDetector`,
-  hoy `FailedLoginStreakDetector`) → `NotificationFactoryImpl` (notificación, audiencias y una
+  `DispatchingSourceEventHandler` → un `ActivitySourceAdapter` por fuente de RabbitMQ
+  (`MasterDataSourceAdapter`, `ConfigurationSourceAdapter`, `UsersSourceAdapter`; los de Keycloak,
+  `KeycloakLoginEventAdapter` y `KeycloakAdminEventAdapter`, los llama el lector) →
+  `ActivityIngestorImpl` (`insert ... on conflict do nothing`; si insertó: `RuleEngineImpl` y los
+  `DerivedEventDetector`, hoy `FailedLoginStreakDetector` y `UsersChangeCorrelator`) →
+  `NotificationFactoryImpl` (notificación, audiencias y una
   entrega `AUDIENCE` por canal que empuja) → `DeliveryDispatcherImpl` (fuera de transacción:
   reclama, expande con `KeycloakDirectoryAudienceResolver`, envía por el `DeliveryChannel`, marca
   a través de `DeliveryRelayServiceImpl`). Aparte: `BurstAggregatorImpl` (ráfagas y su cierre),
@@ -117,9 +119,25 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
   y el arrendamiento del lector por recuento de filas; nunca leer-y-escribir. Un derivado lleva una
   clave calculable (`streak:<dimensión>:<valor>:<inicio de ventana>`, `burst:<id>`) para que dos
   instancias o dos pasadas no lo dupliquen.
-- **A quién le toca se resuelve al leer, con el token** (`USER:`, `PROFILE:` por cada rol de realm,
-  `CLIENT_ROLE:` por cada rol de cliente); nada se expande al crear. «Marcar todas» va hasta la más
-  reciente visible, no hasta ahora; el recibo gana a la marca.
+- **A quién le toca se resuelve al leer, con el token** (`USER:`, `USER_ID:` por el `sub`,
+  `PROFILE:` por cada rol de realm, `CLIENT_ROLE:` por cada rol de cliente); nada se expande al
+  crear. «Marcar todas» va hasta la más reciente visible, no hasta ahora; el recibo gana a la marca.
+  `USER_ID` existe porque `mto-users` no siempre sabe el nombre del usuario objetivo (roles,
+  perfiles, sesiones) y un adaptador no puede preguntarlo a Keycloak: corre dentro de la
+  transacción del inbox.
+- **Los eventos propios de un servicio son `DomainEvent`** (`entityName`, `entityId`, `eventName`,
+  `values`) y el tipo de la línea sale de ahí (`<categoría>.<entityName>.<eventName>`), como la
+  clave de enrutado; `users.admin.*` es de Keycloak y un productor que lo use va a la DLQ. Los
+  ejemplos que cada productor versiona (`docs/messaging/examples/` de `mto-configuration` y
+  `mto-users`) están copiados en `src/test/resources/contracts/<productor>/` y son lo que
+  `BusinessLayerTest` y `MessagingLayerTest` hacen pasar por los adaptadores: un cambio de contrato
+  se copia aquí en el mismo cambio.
+- **Un cambio hecho desde `mto-users` se registra una vez con nombre**: su evento (con la persona)
+  y el de administración de Keycloak del mismo cambio (con `mto-users-svc`) se funden marcando el
+  de Keycloak con `superseded_by` (`UsersChangeCorrelator`, ventana
+  `app.notification.users.correlation-window`, cualquier orden de llegada, actualización
+  condicional). El de Keycloak con actor `PERSON` (consola, `kcadm`) nunca se funde: es el «cambio
+  fuera de la aplicación» que sí avisa. Las consultas esconden lo fundido salvo `includeSuperseded`.
 - **Las reglas se validan al arrancar** (`YamlRuleRepository`): clave repetida, tipo fuera de
   `ActivityTypes`, audiencia o canal desconocidos impiden arrancar. Una regla que falla al
   evaluarse se salta y se registra; las demás siguen. Un tipo nuevo va a `ActivityTypes` antes que
@@ -137,16 +155,18 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
 
 Una clase por capa; se añaden métodos, no clases: `DomainModelTest`, `RulesConfigurationTest` (el
 YAML real carga; una regla rota impide arrancar), `BusinessLayerTest` (motor, ingesta, detector de
-rachas, datos maestros, adaptadores y lector de Keycloak, despachador y resolutor; con dobles),
-`MessagingLayerTest` (el JSON literal de `mto-configuration`, consumidor, inbox, firma y topología
-con `ApplicationContextRunner`), `KeycloakEventsClientTest` (`MockRestServiceServer`),
+rachas, datos maestros, los trabajos de configuración y las acciones de `mto-users` con los
+ejemplos de `src/test/resources/contracts`, el correlador, adaptadores y lector de Keycloak,
+despachador y resolutor; con dobles), `MessagingLayerTest` (el JSON literal de `mto-configuration`
+y los ejemplos de cada productor, consumidor, inbox, firma y topología de las tres fuentes con
+`ApplicationContextRunner`), `KeycloakEventsClientTest` (`MockRestServiceServer`),
 `MailLayerTest` (GreenMail), `MapperLayerTest`, `DtoValidationTest`, `JpaEntityModelTest`,
 `RestControllerLayerTest` (`@WebMvcTest` de los cuatro controladores con la cadena real y
 `jwt()`), `GlobalExceptionHandlerTest`, `SecurityLayerTest`, `ApiAuthorizationRulesTest`
 (controladores sonda), `ApiDocsExposureTest`, `CorrelationIdFilterTest`,
 `OpenApiDocumentationConfigurationTest`; contra PostgreSQL, `InboxMessageRepositoryDataJpaTest`,
-`ActivityRegistryDataJpaTest` (idempotencia, `CHECK`s, rachas, ráfagas con su cierre en carrera,
-frenos, arrendamiento, purga) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
+`ActivityRegistryDataJpaTest` (idempotencia, `CHECK`s, rachas, la fusión del evento de Keycloak con
+el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera, frenos, arrendamiento, purga) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
 entregas), los tres `@DataJpaTest` que recogen los servicios package-private con una
 `@TestConfiguration` anidada y `@ComponentScan` por nombre; `MtoNotificationApplicationTests`
 (contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean);

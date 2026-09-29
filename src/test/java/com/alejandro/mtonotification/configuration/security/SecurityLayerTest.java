@@ -156,8 +156,9 @@ class SecurityLayerTest {
     }
 
     /**
-     * Las claves con las que la bandeja se resuelve al leer: la persona, cada rol de realm (los
-     * perfiles son roles compuestos de realm y el token trae su nombre) y cada rol de cliente.
+     * Las claves con las que la bandeja se resuelve al leer: la persona (por nombre y por id, para
+     * las fuentes que solo saben el id), cada rol de realm (los perfiles son roles compuestos de
+     * realm y el token trae su nombre) y cada rol de cliente.
      */
     @Test
     void currentUserServiceDerivesTheAudienceKeysFromTheToken() {
@@ -173,14 +174,14 @@ class SecurityLayerTest {
                 "alice"
         ));
 
-        assertEquals(List.of("USER:alice", "PROFILE:mto-ops", "PROFILE:offline_access",
+        assertEquals(List.of("USER:alice", "USER_ID:subject-1", "PROFILE:mto-ops", "PROFILE:offline_access",
                         "CLIENT_ROLE:mto-notification-api:notification-inbox", "CLIENT_ROLE:mto-notification-api:notification-admin",
                         "CLIENT_ROLE:account:view-profile"),
                 currentUserService.getAudienceKeys());
 
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(
                 jwt(Map.of(JwtClaimNames.PREFERRED_USERNAME, "bob")), List.of(), "bob"));
-        assertEquals(List.of("USER:bob"), currentUserService.getAudienceKeys(), "sin roles, solo la persona");
+        assertEquals(List.of("USER:bob", "USER_ID:subject-1"), currentUserService.getAudienceKeys(), "sin roles, solo la persona");
 
         SecurityContextHolder.clearContext();
         assertTrue(currentUserService.getAudienceKeys().isEmpty());

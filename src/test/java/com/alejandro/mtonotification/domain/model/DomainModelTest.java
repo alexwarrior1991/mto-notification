@@ -45,6 +45,8 @@ class DomainModelTest {
     void audienceKeysRoundTripThroughTheirSerializedForm() {
         assertEquals("USER:alice", Audience.user("alice").toKey());
         assertEquals("PROFILE:mto-admin", Audience.profile("mto-admin").toKey());
+        assertEquals("USER_ID:6f1b1c8e", Audience.userId("6f1b1c8e").toKey());
+        assertEquals(Optional.of(Audience.userId("6f1b1c8e")), Audience.parse("user-id:6f1b1c8e"));
         assertEquals("CLIENT_ROLE:mto-stock-api:stock-read", Audience.clientRole("mto-stock-api", "stock-read").toKey());
 
         assertEquals(Optional.of(Audience.user("alice")), Audience.parse("USER:alice"));

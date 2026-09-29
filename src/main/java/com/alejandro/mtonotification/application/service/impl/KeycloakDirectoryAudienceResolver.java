@@ -55,6 +55,7 @@ class KeycloakDirectoryAudienceResolver implements AudienceResolver {
         try {
             resolved = switch (audience.kind()) {
                 case USER -> user(audience.key());
+                case USER_ID -> userById(audience.key());
                 case PROFILE -> realmRoleMembers(audience.key());
                 case CLIENT_ROLE -> clientRoleMembers(audience.key());
             };
@@ -70,6 +71,11 @@ class KeycloakDirectoryAudienceResolver implements AudienceResolver {
 
     private List<Recipient> user(String username) {
         Optional<KeycloakUser> user = directory.findUserByUsername(username);
+        return user.filter(KeycloakUser::isEnabled).map(found -> List.of(toRecipient(found))).orElseGet(List::of);
+    }
+
+    private List<Recipient> userById(String id) {
+        Optional<KeycloakUser> user = directory.findUserById(id);
         return user.filter(KeycloakUser::isEnabled).map(found -> List.of(toRecipient(found))).orElseGet(List::of);
     }
 

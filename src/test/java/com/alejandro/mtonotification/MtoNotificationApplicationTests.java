@@ -26,7 +26,9 @@ import com.alejandro.mtonotification.application.service.SourceEventProcessor;
 import com.alejandro.mtonotification.application.service.ThrottleGate;
 import com.alejandro.mtonotification.configuration.keycloak.KeycloakPollingConfiguration;
 import com.alejandro.mtonotification.configuration.web.CorrelationIdFilter;
+import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.ConfigurationSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.MasterDataSourceConsumer;
+import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.UsersSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.SourceKind;
 import com.alejandro.mtonotification.infrastructure.web.controller.AccessController;
 import com.alejandro.mtonotification.infrastructure.web.controller.ActivityController;
@@ -107,11 +109,12 @@ class MtoNotificationApplicationTests extends PostgreSQLTestContainer {
     void everyServiceOfTheIngestionAndTheRulesIsABean() {
         for (Class<?> service : List.of(InboxMessageService.class, SourceEventProcessor.class, SourceEventHandler.class,
                 ActivityIngestor.class, BurstAggregator.class, RuleRepository.class, RuleEngine.class, ThrottleGate.class,
-                NotificationFactory.class, DerivedEventDetector.class)) {
+                NotificationFactory.class)) {
             assertNotNull(context.getBean(service), service.getSimpleName());
         }
-        assertEquals(List.of("master-data"), context.getBeansOfType(ActivitySourceAdapter.class).values().stream()
-                .map(ActivitySourceAdapter::sourceId).sorted().toList(), "las fuentes de esta fase");
+        assertEquals(List.of("configuration", "master-data", "users"), context.getBeansOfType(ActivitySourceAdapter.class).values().stream()
+                .map(ActivitySourceAdapter::sourceId).sorted().toList(), "las fuentes de RabbitMQ hasta esta fase");
+        assertEquals(2, context.getBeansOfType(DerivedEventDetector.class).size(), "la racha de accesos y el correlador de usuarios");
         assertFalse(context.getBean(RuleRepository.class).rules().isEmpty(), "el YAML de reglas se carga al arrancar");
     }
 
@@ -133,6 +136,8 @@ class MtoNotificationApplicationTests extends PostgreSQLTestContainer {
     @Test
     void whatIsSwitchedOffStaysOut() {
         assertEquals(0, context.getBeanNamesForType(MasterDataSourceConsumer.class).length, "sin broker no hay consumidor");
+        assertEquals(0, context.getBeanNamesForType(ConfigurationSourceConsumer.class).length);
+        assertEquals(0, context.getBeanNamesForType(UsersSourceConsumer.class).length);
         assertEquals(0, context.getBeanNamesForType(KeycloakPollingConfiguration.class).length, "sin sondeo planificado");
     }
 }

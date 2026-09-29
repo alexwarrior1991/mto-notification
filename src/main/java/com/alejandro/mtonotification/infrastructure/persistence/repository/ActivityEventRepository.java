@@ -1,5 +1,6 @@
 package com.alejandro.mtonotification.infrastructure.persistence.repository;
 
+import com.alejandro.mtonotification.domain.model.ActorKind;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.ActivityEvent;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -8,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -74,6 +77,34 @@ public interface ActivityEventRepository extends JpaRepository<ActivityEvent, UU
             + "and occurred_at between :from and :to", nativeQuery = true)
     Instant earliestByTypeAndIpInWindow(@Param("type") String type, @Param("ip") String ip,
                                         @Param("from") Instant from, @Param("to") Instant to);
+
+    // --- el correlador de usuarios ---
+
+    /** Las lineas de una fuente sobre un sujeto, de unos tipos, sin fundir aun: las de Keycloak que un evento de mto-users deja atras. */
+    @Query("select e from ActivityEvent e where e.sourceService = :sourceService and e.actorKind = :actorKind "
+            + "and e.type in :types and e.subjectType = :subjectType and e.subjectId = :subjectId "
+            + "and e.supersededBy is null and e.occurredAt between :from and :to order by e.occurredAt")
+    List<ActivityEvent> findUnsupersededLines(@Param("sourceService") String sourceService, @Param("actorKind") ActorKind actorKind,
+                                              @Param("types") Collection<String> types, @Param("subjectType") String subjectType,
+                                              @Param("subjectId") String subjectId, @Param("from") Instant from, @Param("to") Instant to);
+
+    /** Las lineas de unos tipos sobre un sujeto en una ventana: las de mto-users que una linea de Keycloak repite. */
+    @Query("select e from ActivityEvent e where e.type in :types and e.subjectType = :subjectType and e.subjectId = :subjectId "
+            + "and e.occurredAt between :from and :to order by e.occurredAt")
+    List<ActivityEvent> findLinesBySubject(@Param("types") Collection<String> types, @Param("subjectType") String subjectType,
+                                           @Param("subjectId") String subjectId, @Param("from") Instant from, @Param("to") Instant to);
+
+    /** Lo mismo por la sesion que la linea lleva en su payload: Keycloak nombra la sesion, mto-users al usuario y la sesion. */
+    @Query(value = "select * from activity_event where type in (:types) and payload ->> 'session' = :sessionId "
+            + "and occurred_at between :from and :to order by occurred_at", nativeQuery = true)
+    List<ActivityEvent> findLinesBySessionPayload(@Param("types") Collection<String> types, @Param("sessionId") String sessionId,
+                                                  @Param("from") Instant from, @Param("to") Instant to);
+
+    /** Condicional: solo la primera decision cuenta, y otra instancia que llegue a la vez no la pisa. */
+    @Modifying
+    @Query(value = "update activity_event set superseded_by = :by, updated_at = now() where id = :id and superseded_by is null",
+            nativeQuery = true)
+    int supersede(@Param("id") UUID id, @Param("by") UUID by);
 
     /** Purga por lotes de una categoria: cada una tiene su retencion. */
     @Modifying

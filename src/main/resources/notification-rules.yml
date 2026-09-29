@@ -101,6 +101,92 @@ rules:
     body: "#{event.actorUsername ?: 'Un proceso'} ha creado el paquete de ejecucion #{event.subjectLabel ?: event.subjectId}; en el almacen aparece como proyecto EP-#{event.subjectId}."
     link: "/almacen/proyectos"
 
+  # --- Trabajos de mto-configuration -------------------------------------------------------------
+
+  - key: configuration-job-finished
+    event: configuration.job.finished
+    audiences: ["USER:#{payload.createdBy}"]
+    channels: [inbox]
+    title: "Trabajo #{payload.type} #{payload.status == 'FAILED' ? 'fallido' : 'terminado'}: #{payload.successfulItems ?: 0} correctos, #{payload.failedItems ?: 0} con error"
+    body: "El trabajo #{payload.type} (#{payload.jobId}) ha terminado en estado #{payload.status}: #{payload.processedItems ?: 0} de #{payload.totalItems ?: 0} elementos procesados, #{payload.failedItems ?: 0} con error.#{payload.errorMessage != null ? ' ' + payload.errorMessage : ''}"
+    link: "/trabajos"
+
+  # --- Usuarios: lo que hace mto-users, con la persona que lo hizo ------------------------------
+  # El evento de administracion de Keycloak del mismo cambio queda fundido con estos (superseded_by)
+  # y no dispara nada: quien administra las cuentas se entera una vez, y con nombre.
+
+  - key: users-user-created
+    event: users.user.created
+    audiences: [PROFILE:mto-users-admin]
+    channels: [inbox]
+    title: "Alta de usuario: #{payload.targetUsername ?: payload.targetUserId}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha dado de alta la cuenta #{payload.targetUsername ?: payload.targetUserId}#{payload.enabled == false ? ', deshabilitada' : ''}#{payload.temporaryAccess == true ? ', con contrasena temporal' : ''}."
+    link: "/usuarios/#{payload.targetUserId}"
+
+  - key: users-user-deleted
+    event: users.user.deleted
+    severity: WARNING
+    audiences: [PROFILE:mto-users-admin]
+    channels: [inbox, email]
+    title: "Baja de usuario: #{payload.targetUsername ?: payload.targetUserId}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha borrado la cuenta #{payload.targetUsername ?: payload.targetUserId}. Sus sesiones y sus credenciales han desaparecido con ella."
+    link: "/actividad?category=USERS&subjectType=user&subjectId=#{payload.targetUserId}"
+
+  - key: users-user-disabled
+    event: users.user.disabled
+    audiences: [PROFILE:mto-users-admin]
+    channels: [inbox]
+    title: "Usuario deshabilitado: #{payload.targetUsername ?: payload.targetUserId}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha deshabilitado la cuenta #{payload.targetUsername ?: payload.targetUserId}. Deshabilitar no cierra lo que ya tenia abierto: si hace falta, hay que cerrar tambien sus sesiones y sus sesiones offline."
+    link: "/usuarios/#{payload.targetUserId}"
+
+  - key: users-credential-deleted
+    event: users.credential.deleted
+    audiences: [PROFILE:mto-users-admin, "USER_ID:#{payload.targetUserId}"]
+    channels: [inbox]
+    title: "Credencial #{payload.type} retirada a #{payload.targetUsername ?: payload.targetUserId}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha retirado la credencial #{payload.type} de la cuenta #{payload.targetUsername ?: payload.targetUserId}#{payload.type == 'otp' ? ': el segundo factor tendra que enrolarse de nuevo' : ''}."
+    link: "/usuarios/#{payload.targetUserId}"
+
+  - key: users-sessions-revoked
+    event:
+      - users.session.revoked
+      - users.session.all-revoked
+      - users.offline-session.revoked
+      - users.offline-session.all-revoked
+    audiences: [PROFILE:mto-users-admin]
+    channels: [inbox]
+    title: "Sesiones cerradas a #{payload.targetUsername ?: payload.targetUserId}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha cerrado #{event.type matches '.*all-revoked' ? 'todas las sesiones' : 'una sesion'}#{event.type matches '.*offline.*' ? ' offline' : ''} de #{payload.targetUsername ?: payload.targetUserId}."
+    link: "/usuarios/#{payload.targetUserId}"
+    throttle:
+      window: 5m
+      key: "#{payload.targetUserId}"
+
+  - key: users-profile-changed
+    event: [users.profile.assigned, users.profile.removed]
+    audiences: [PROFILE:mto-users-admin, "USER_ID:#{payload.targetUserId}"]
+    channels: [inbox]
+    title: "Perfil #{payload.profile} #{event.type == 'users.profile.assigned' ? 'asignado a' : 'retirado de'} #{payload.targetUsername ?: payload.targetUserId}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'users.profile.assigned' ? 'asignado' : 'retirado'} el perfil #{payload.profile} #{event.type == 'users.profile.assigned' ? 'a' : 'de'} la cuenta #{payload.targetUsername ?: payload.targetUserId}. Los permisos cambian en el proximo inicio de sesion."
+    link: "/usuarios/#{payload.targetUserId}"
+
+  - key: users-client-roles-changed
+    event: [users.client-roles.added, users.client-roles.removed]
+    audiences: [PROFILE:mto-users-admin, "USER_ID:#{payload.targetUserId}"]
+    channels: [inbox]
+    title: "Permisos de #{payload.client} #{event.type == 'users.client-roles.added' ? 'anadidos a' : 'retirados de'} #{payload.targetUsername ?: payload.targetUserId}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'users.client-roles.added' ? 'anadido' : 'retirado'} los permisos #{payload.roles} de #{payload.client} #{event.type == 'users.client-roles.added' ? 'a' : 'de'} la cuenta #{payload.targetUsername ?: payload.targetUserId}."
+    link: "/usuarios/#{payload.targetUserId}"
+
+  - key: users-password-reset
+    event: users.user.password-reset
+    audiences: ["USER_ID:#{payload.targetUserId}"]
+    channels: [inbox]
+    title: "Un administrador ha cambiado tu contrasena"
+    body: "#{event.actorUsername ?: 'Un administrador'} ha fijado una contrasena #{payload.temporary == false ? 'nueva' : 'temporal, que tendras que cambiar al entrar,'} para tu cuenta. Si no lo esperabas, avisa a administracion."
+    link: "/notificaciones"
+
   # --- Usuarios: cambios hechos fuera de la aplicacion (Keycloak) --------------------------------
 
   - key: users-change-outside-application

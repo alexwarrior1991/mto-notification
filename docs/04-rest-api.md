@@ -47,7 +47,7 @@ backoffice), `subjectType`, `subjectId`, `activityEventId`, `createdAt`, `read`,
 | `POST /admin/deliveries/{id}/retry` | La entrega otra vez `PENDING`; 404 `DLV-404`; 409 `DLV-409` si no está `FAILED` ni `SKIPPED` |
 | `GET /admin/sources` | Marcas y arrendamientos del lector de Keycloak (`cursors[]`), recuentos del inbox por fuente y estado, ráfagas abiertas y entregas por estado |
 | `POST /admin/test-email {to}` | 202 con la notificación `system.test-email` creada para quien llama y una entrega directa a la dirección |
-| `POST /admin/broadcasts {title, body, link, severity, audiences[], channels[]}` | 201 + `Location`; audiencias como `KIND:clave`; 422 `NTF-422` con una clase de audiencia o un canal desconocidos |
+| `POST /admin/broadcasts {title, body, link, severity, audiences[], channels[]}` | 201 + `Location`; audiencias como `KIND:clave` (`USER`, `USER_ID`, `PROFILE`, `CLIENT_ROLE`); 422 `NTF-422` con una clase de audiencia o un canal desconocidos |
 
 ## Paginación
 
