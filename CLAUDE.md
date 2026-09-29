@@ -152,8 +152,9 @@ entregas), los tres `@DataJpaTest` que recogen los servicios package-private con
 (contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean);
 y en `verify`, `KeycloakAuthorizationIT` y `KeycloakEventsIT` (Keycloak 26.1 en Testcontainers con
 `src/test/resources/keycloak/mto-notification-test-realm.json`, la misma forma que `keycloak/`,
-con la cuenta de servicio; el segundo activa los eventos del realm por la Admin API al arrancar,
-como `apply-partials.sh` (en el JSON de `--import-realm` no pueden ir junto a una cuenta de
-servicio: Keycloak 26.1 no arranca), hace un acceso, tres fallos y un cambio desde la consola y
+con la cuenta de servicio, copiado en el contenedor como `mto-realm.json` porque `DirImportProvider`
+saca el nombre del realm del nombre del fichero y, con otro, la cuenta de servicio muere con
+«Session not bound to a realm»; el segundo activa los eventos del realm por la Admin API al
+arrancar, como `apply-partials.sh`, hace un acceso, tres fallos y un cambio desde la consola y
 comprueba el registro, la racha, los avisos y que la segunda pasada no repite nada). `support/PostgreSQLTestContainer` levanta `postgres:17-alpine` o usa
 `TEST_DATABASE_URL/USERNAME/PASSWORD`; sin ninguna de las dos cosas la clase se omite, no falla.

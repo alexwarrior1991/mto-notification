@@ -65,10 +65,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>El realm de {@code src/test/resources/keycloak/mto-notification-test-realm.json} lleva la
  * cuenta de servicio con los mismos roles que concede {@code mto-platform/keycloak/apply-partials.sh};
- * los eventos se activan por la Admin API una vez arrancado, como hace ese mismo guion. No van en
- * el JSON a proposito: Keycloak 26.1 no arranca con {@code --import-realm} si el realm trae
- * {@code adminEventsEnabled} y una cuenta de servicio a la vez («Session not bound to a realm»).
- * Es la mitad del realm que {@code KeycloakAuthorizationIT} no ve.</p>
+ * los eventos se activan por la Admin API una vez arrancado, como hace ese mismo guion (una
+ * importacion parcial tampoco puede activarlos). Es la mitad del realm que
+ * {@code KeycloakAuthorizationIT} no ve.</p>
  */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(properties = {
@@ -99,9 +98,15 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
                     .withExposedPorts(HTTP_PORT)
                     .withEnv("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
                     .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
+                    // El nombre dentro del contenedor tiene que ser <realm>-realm.json: un fichero cuyo
+                    // nombre contiene "-realm.json" va por DirImportProvider, que saca el nombre del
+                    // realm del nombre del fichero y lo vincula a la sesion en la ultima transaccion
+                    // (la que inicializa las cuentas de servicio). Con "mto-notification-test-realm.json"
+                    // buscaba un realm "mto-notification-test", no lo encontraba y la importacion moria
+                    // con "Session not bound to a realm" al enlazar el usuario de mto-notification-svc.
                     .withCopyFileToContainer(
                             MountableFile.forClasspathResource("keycloak/mto-notification-test-realm.json"),
-                            "/opt/keycloak/data/import/mto-notification-test-realm.json")
+                            "/opt/keycloak/data/import/" + REALM + "-realm.json")
                     .withCommand("start-dev", "--import-realm")
                     .waitingFor(Wait.forHttp("/realms/" + REALM + "/.well-known/openid-configuration")
                             .forPort(HTTP_PORT)
