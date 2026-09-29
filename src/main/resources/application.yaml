@@ -1,3 +1,189 @@
 spring:
   application:
     name: mto-notification
+  profiles:
+    default: ${SPRING_PROFILES_DEFAULT:dev}
+  # La API es un resource server: no emite tokens ni guarda usuarios, solo valida los que emite
+  # Keycloak. El JWK Set se descarga de forma perezosa, con lo que un Keycloak que aun no responde
+  # no impide arrancar.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://auth.mto.local:8082/realms/mto}
+
+      # Cliente para las llamadas SALIENTES a la Admin API de Keycloak (eventos de acceso y de
+      # administracion, direcciones de una audiencia), que se autentica contra este mismo Keycloak.
+      # Mismo patron que mto-maintenance hacia mto-stock.
+      client:
+        provider:
+          keycloak:
+            # Se declara el endpoint de token en lugar de issuer-uri a proposito: el descubrimiento
+            # por issuer es una llamada HTTP durante la creacion del bean, y con ella la aplicacion
+            # no arrancaria si Keycloak no esta listo todavia.
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://auth.mto.local:8082/realms/mto/protocol/openid-connect/token}
+        registration:
+          # Cuenta de servicio de esta aplicacion. client_credentials y no password: el token
+          # representa al servicio, no a una persona.
+          mto-services:
+            provider: keycloak
+            client-id: ${KEYCLOAK_SERVICE_CLIENT_ID:mto-notification-svc}
+            # Vacio por defecto: con el lector de Keycloak apagado nadie pide un token y la
+            # aplicacion arranca sin secreto.
+            client-secret: ${KEYCLOAK_SERVICE_CLIENT_SECRET:}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+
+  # Este servicio solo CONSUME: no publica nada, asi que no hay publisher confirms ni returns que
+  # configurar. Lo que hay debajo de listener.simple lo aplica Spring Boot a traves del
+  # SimpleRabbitListenerContainerFactoryConfigurer; sin pasar por el, una factory declarada a mano
+  # descarta todo este bloque en silencio.
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+    virtual-host: ${SPRING_RABBITMQ_VIRTUAL_HOST:/}
+    listener:
+      simple:
+        acknowledge-mode: auto
+        # Continua la traza que viaja en las cabeceras del mensaje: sin esto, consumir abriria una
+        # traza nueva y el salto por la cola quedaria como un corte en el medio.
+        observation-enabled: ${SPRING_RABBITMQ_LISTENER_OBSERVATION_ENABLED:true}
+        concurrency: ${SPRING_RABBITMQ_LISTENER_CONCURRENCY:1}
+        max-concurrency: ${SPRING_RABBITMQ_LISTENER_MAX_CONCURRENCY:5}
+        prefetch: ${SPRING_RABBITMQ_LISTENER_PREFETCH:10}
+        retry:
+          # Reintentos acotados: agotados los intentos, el mensaje va a la DLQ. La otra mitad de esa
+          # garantia -no reencolar lo rechazado- la fija el codigo y no este bloque.
+          enabled: true
+          max-retries: ${SPRING_RABBITMQ_LISTENER_MAX_RETRIES:3}
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 10s
+
+  # Timeouts del RestClient que habla con la Admin API de Keycloak. Claves en plural de Boot 4.1.
+  http:
+    clients:
+      connect-timeout: ${APP_KEYCLOAK_CONNECT_TIMEOUT:2s}
+      read-timeout: ${APP_KEYCLOAK_READ_TIMEOUT:10s}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info,metrics,prometheus}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: ${MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS:when_authorized}
+    info:
+      access: unrestricted
+    metrics:
+      access: unrestricted
+    prometheus:
+      access: unrestricted
+  health:
+    # Fuera del health: un broker caido deja de registrar actividad, pero la API sigue sirviendo la
+    # bandeja y el registro. Contarlo como DOWN sacaria la instancia del balanceador por algo de lo
+    # que se recupera sola.
+    rabbit:
+      enabled: ${MANAGEMENT_HEALTH_RABBIT_ENABLED:false}
+    # Los circuitos (el de Keycloak) entran como componente informativo, no deciden el global.
+    circuitbreakers:
+      enabled: true
+  info:
+    env:
+      enabled: true
+
+  # Trazabilidad distribuida. Mismos valores que el resto de servicios, a proposito.
+  tracing:
+    enabled: ${MTO_TRACING_ENABLED:true}
+    sampling:
+      # Un span NO muestreado sigue propagando su traceparent (con el flag a 00), asi que la cadena
+      # entre servicios no se rompe por muestrear poco.
+      probability: ${MTO_TRACING_SAMPLING_PROBABILITY:0.1}
+
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+    metrics:
+      export:
+        # Las metricas salen por Prometheus (ver /actuator/prometheus). El starter de OpenTelemetry
+        # arrastra tambien un registro OTLP de metricas, y sin esto intentaria empujarlas a un
+        # colector ademas de exponerlas.
+        enabled: false
+
+info:
+  app:
+    name: ${spring.application.name}
+    description: Activity log and notifications of the MTO domain
+    version: ${APP_VERSION:0.0.1-SNAPSHOT}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    display-request-duration: true
+    doc-expansion: none
+    disable-swagger-default-url: true
+  show-actuator: ${SPRINGDOC_SHOW_ACTUATOR:false}
+
+app:
+  security:
+    # Cliente de Keycloak que representa a esta API. Sus roles de cliente son los permisos que
+    # comprueban la cadena de filtros y las anotaciones de seguridad de metodo.
+    client-id: ${KEYCLOAK_CLIENT_ID:mto-notification-api}
+    # Claim que se usa como nombre del principal, y por tanto como autor en las columnas de auditoria.
+    principal-claim: preferred_username
+    audience-validation-enabled: ${KEYCLOAK_AUDIENCE_VALIDATION_ENABLED:true}
+    # Si la validacion de audiencia esta activa y este valor llega vacio, la aplicacion no arranca:
+    # sin audiencia la API aceptaria cualquier token emitido por el realm, incluido el del frontal
+    # de otra aplicacion.
+    required-audience: ${KEYCLOAK_AUDIENCE:mto-notification-api}
+    # Publicar /swagger-ui y /v3/api-docs sin autenticacion. Cerrado por defecto para que un entorno
+    # desplegado nuevo no exponga el catalogo completo de endpoints por olvido: los perfiles de
+    # desarrollo lo abren explicitamente.
+    expose-api-docs: ${APP_SECURITY_EXPOSE_API_DOCS:false}
+    cors:
+      allowed-origins:
+        - ${APP_CORS_ALLOWED_ORIGIN:http://localhost:4200}
+      allowed-methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      allowed-headers:
+        - Authorization
+        - Content-Type
+        - X-Correlation-Id
+      exposed-headers:
+        - Location
+        - X-Correlation-Id
+      allow-credentials: false
+      max-age: ${APP_CORS_MAX_AGE:3600}
+
+  # Un identificador por peticion: el que trae el gateway en X-Correlation-Id, o uno nuevo. Sale en
+  # cada linea de log, en el cuerpo de cada error y en el registro de actividad.
+  correlation:
+    header-name: X-Correlation-Id
+    max-length: 64
+
+  # Con esto en false no se declara ninguna topologia ni escucha ningun consumidor: nadie abre una
+  # conexion y la aplicacion arranca sin broker.
+  rabbitmq:
+    enabled: ${APP_RABBITMQ_ENABLED:true}
+
+  # Firma de los mensajes, sobre los bytes que viajan de verdad. EL MISMO VALOR que en los servicios
+  # que publican. DISABLED no comprueba nada; OPTIONAL rechaza una firma que no cuadra pero acepta
+  # lo que no puede comprobar; REQUIRED exige que todo mensaje llegue firmado y sea comprobable.
+  messaging:
+    signature:
+      secret: ${MESSAGING_SIGNATURE_SECRET:}
+      mode: ${MESSAGING_SIGNATURE_MODE:OPTIONAL}

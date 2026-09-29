@@ -1,0 +1,34 @@
+### MTO Notification API - IntelliJ HTTP Client
+@host = localhost
+@port = 8086
+@baseUrl = http://{{host}}:{{port}}/api/v1/notifications
+@keycloakUrl = http://auth.mto.local:8082
+@realm = mto
+@clientId = mto-frontend
+@username = notificacion.auditor
+@password = local
+
+### Auth - access token (notificacion.lector / .auditor / .responsable, password 'local')
+POST {{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id={{clientId}}&username={{username}}&password={{password}}
+
+> {%
+    client.global.set("accessToken", response.body.access_token);
+%}
+
+### Health (no token)
+GET http://{{host}}:{{port}}/actuator/health
+
+### Inbox (fase 2)
+GET {{baseUrl}}/inbox?unread=true&size=20
+Authorization: Bearer {{accessToken}}
+
+### Activity log (fase 2)
+GET {{baseUrl}}/activity?category=MAINTENANCE&size=20
+Authorization: Bearer {{accessToken}}
+
+### Access log (fase 2, notification-access-read)
+GET {{baseUrl}}/access?username=config.responsable&size=20
+Authorization: Bearer {{accessToken}}

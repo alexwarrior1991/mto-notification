@@ -1,0 +1,61 @@
+server:
+  port: ${SERVER_PORT:8086}
+
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/mto_notification_dev}
+    username: ${DATABASE_USERNAME:}
+    password: ${DATABASE_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    locations: ${SPRING_FLYWAY_LOCATIONS:classpath:db/migration}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    show-sql: ${JPA_SHOW_SQL:false}
+    properties:
+      hibernate:
+        format_sql: ${JPA_FORMAT_SQL:true}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://auth.mto.local:8082/realms/mto}
+      client:
+        registration:
+          mto-services:
+            # El secreto fijo de keycloak/mto-notification-dev.json, el mismo que
+            # MTO_NOTIFICATION_SERVICE_CLIENT_SECRET en mto-platform/.env.example.
+            client-secret: ${KEYCLOAK_SERVICE_CLIENT_SECRET:mto-notification-svc-secret}
+
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:mto}
+    password: ${SPRING_RABBITMQ_PASSWORD:mto}
+
+app:
+  security:
+    # Entorno de desarrollo: la documentacion interactiva es la forma habitual de probar la API.
+    expose-api-docs: ${APP_SECURITY_EXPOSE_API_DOCS:true}
+
+  rabbitmq:
+    # Con el broker de mto-platform levantado, la topologia se declara y los consumidores escuchan.
+    # Si no se quiere levantar RabbitMQ, APP_RABBITMQ_ENABLED=false y la aplicacion arranca igual.
+    enabled: ${APP_RABBITMQ_ENABLED:true}
+
+management:
+  endpoint:
+    health:
+      show-details: ${MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS:always}
+
+logging:
+  level:
+    root: ${LOGGING_LEVEL_ROOT:INFO}
+    com.alejandro.mtonotification: ${LOGGING_LEVEL_APP:DEBUG}
+    org.hibernate.SQL: ${LOGGING_LEVEL_SQL:WARN}

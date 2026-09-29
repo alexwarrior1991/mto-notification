@@ -1,0 +1,100 @@
+{
+  "roles": {
+    "client": {
+      "mto-notification-api": [
+        {
+          "name": "notification-inbox",
+          "description": "Mi bandeja: leer mis notificaciones, el contador de no leidas y marcarlas como leidas"
+        },
+        {
+          "name": "notification-activity-read",
+          "description": "Lectura del registro de actividad del dominio (todo menos los accesos)"
+        },
+        {
+          "name": "notification-access-read",
+          "description": "Lectura de los accesos: logins, fallos, logouts y bloqueos, con usuario e IP"
+        },
+        {
+          "name": "notification-admin",
+          "description": "Administracion: reglas cargadas, entregas y reintentos, estado de las fuentes, avisos manuales"
+        },
+        {
+          "name": "ops-metrics",
+          "description": "Lectura de los endpoints de Actuator de mto-notification"
+        },
+        {
+          "name": "ops-write",
+          "description": "Operaciones de Actuator de mto-notification que modifican estado"
+        }
+      ]
+    },
+    "realm": [
+      {
+        "name": "mto-notification-viewer",
+        "description": "Consulta de notificaciones: la bandeja propia y el registro de actividad",
+        "composite": true,
+        "composites": {
+          "client": {
+            "mto-notification-api": [
+              "notification-inbox",
+              "notification-activity-read"
+            ]
+          }
+        }
+      },
+      {
+        "name": "mto-notification-auditor",
+        "description": "Auditoria: la bandeja propia, el registro de actividad y los accesos (usuario e IP)",
+        "composite": true,
+        "composites": {
+          "client": {
+            "mto-notification-api": [
+              "notification-inbox",
+              "notification-activity-read",
+              "notification-access-read"
+            ]
+          }
+        }
+      },
+      {
+        "name": "mto-notification-admin",
+        "description": "Responsables de notificaciones: ademas de leerlo todo, administran reglas, entregas y fuentes y mandan avisos manuales",
+        "composite": true,
+        "composites": {
+          "client": {
+            "mto-notification-api": [
+              "notification-inbox",
+              "notification-activity-read",
+              "notification-access-read",
+              "notification-admin"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "mto-notification-api",
+      "name": "API de notificaciones MTO",
+      "description": "Resource server. No inicia ningun flujo: existe para declarar los permisos como roles de cliente y para ser la audiencia de los tokens.",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "mto-notification-svc",
+      "name": "Cuenta de servicio de mto-notification",
+      "description": "Cuenta de servicio (client_credentials) con la que mto-notification lee los eventos de acceso y de administracion del realm por la Admin API y resuelve las direcciones de una audiencia. Sus roles de realm-management los concede apply-partials.sh.",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    }
+  ]
+}

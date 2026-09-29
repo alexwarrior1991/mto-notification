@@ -1,0 +1,76 @@
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    locations: ${SPRING_FLYWAY_LOCATIONS:classpath:db/migration}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Sin valor por defecto a proposito: si la variable falta, la aplicacion no arranca. Es
+          # preferible a arrancar apuntando a un emisor de ejemplo y que nadie se entere.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI}
+      client:
+        provider:
+          keycloak:
+            token-uri: ${KEYCLOAK_TOKEN_URI}
+        registration:
+          mto-services:
+            client-id: ${KEYCLOAK_SERVICE_CLIENT_ID}
+            # Sin valor por defecto: un despliegue con el lector de Keycloak activo y sin secreto
+            # debe no arrancar.
+            client-secret: ${KEYCLOAK_SERVICE_CLIENT_SECRET}
+
+  # Sin valores por defecto a proposito: un broker mal configurado tiene que impedir el arranque en
+  # lugar de dejar el servicio en marcha sin consumir nada, que es un fallo silencioso.
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME}
+    password: ${SPRING_RABBITMQ_PASSWORD}
+    virtual-host: ${SPRING_RABBITMQ_VIRTUAL_HOST:/}
+
+app:
+  security:
+    client-id: ${KEYCLOAK_CLIENT_ID}
+    audience-validation-enabled: ${KEYCLOAK_AUDIENCE_VALIDATION_ENABLED:true}
+    required-audience: ${KEYCLOAK_AUDIENCE}
+    # La documentacion describe la superficie completa de la API: en produccion queda cerrada.
+    expose-api-docs: ${APP_SECURITY_EXPOSE_API_DOCS:false}
+    cors:
+      allowed-origins:
+        - ${APP_CORS_ALLOWED_ORIGIN}
+
+  rabbitmq:
+    enabled: ${APP_RABBITMQ_ENABLED:true}
+
+management:
+  endpoint:
+    health:
+      show-details: ${MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS:never}
+
+logging:
+  level:
+    root: ${LOGGING_LEVEL_ROOT:INFO}
+    com.alejandro.mtonotification: ${LOGGING_LEVEL_APP:INFO}

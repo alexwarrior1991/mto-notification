@@ -1,0 +1,17 @@
+.git
+.gitignore
+.idea
+*.iml
+target
+logs
+tmp
+.env
+.env.*
+!.env.example
+Dockerfile
+compose.yaml
+README.md
+HELP.md
+docs
+http
+keycloak
