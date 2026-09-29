@@ -3,6 +3,10 @@ package com.alejandro.mtonotification.infrastructure.web.exception;
 import com.alejandro.mtonotification.application.dto.error.ApiErrorResponse;
 import com.alejandro.mtonotification.application.dto.error.ValidationError;
 import com.alejandro.mtonotification.application.exception.BusinessException;
+import com.alejandro.mtonotification.application.exception.ConflictException;
+import com.alejandro.mtonotification.application.exception.DirectoryUnavailableException;
+import com.alejandro.mtonotification.application.exception.InvalidSortException;
+import com.alejandro.mtonotification.application.exception.UnprocessableException;
 import com.alejandro.mtonotification.application.exception.NotFoundException;
 import com.alejandro.mtonotification.application.exception.ValidationException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -67,6 +71,25 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ValidationException.class)
     public ResponseEntity<ApiErrorResponse> handleValidation(ValidationException exception, HttpServletRequest request) {
         return businessResponse(exception, HttpStatus.BAD_REQUEST, request);
+    }
+
+    /** 409: el recurso existe pero su estado no admite la operacion (una entrega que no se puede reintentar). */
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleConflict(ConflictException exception, HttpServletRequest request) {
+        return businessResponse(exception, HttpStatus.CONFLICT, request);
+    }
+
+    /** 422: bien formado, pero nombra algo que este servicio no resuelve (una clase de audiencia, un canal). */
+    @ExceptionHandler(UnprocessableException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnprocessable(UnprocessableException exception, HttpServletRequest request) {
+        return businessResponse(exception, HttpStatus.UNPROCESSABLE_CONTENT, request);
+    }
+
+    /** 503: el directorio (Keycloak) no responde. Es transitorio y el cliente puede reintentar. */
+    @ExceptionHandler(DirectoryUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleDirectoryUnavailable(DirectoryUnavailableException exception, HttpServletRequest request) {
+        LOGGER.warn("Directory unavailable for {} {}: {}", request.getMethod(), request.getRequestURI(), exception.getMessage());
+        return businessResponse(exception, HttpStatus.SERVICE_UNAVAILABLE, request);
     }
 
     /**
@@ -175,6 +198,18 @@ public class GlobalExceptionHandler {
                 "Missing request parameter.",
                 "REQ-400",
                 List.of(new ValidationError(exception.getParameterName(), "is required")),
+                request
+        );
+    }
+
+    /** 400 {@code REQ-400}: la propiedad existe pero este recurso no ordena por ella. Misma forma que la de Spring Data. */
+    @ExceptionHandler(InvalidSortException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidSort(InvalidSortException exception, HttpServletRequest request) {
+        return clientErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                "Invalid sort property.",
+                "REQ-400",
+                List.of(new ValidationError("sort", "unsupported property '" + exception.getProperty() + "'")),
                 request
         );
     }

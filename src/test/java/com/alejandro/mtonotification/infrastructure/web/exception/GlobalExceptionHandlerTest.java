@@ -3,7 +3,12 @@ package com.alejandro.mtonotification.infrastructure.web.exception;
 import com.alejandro.mtonotification.application.dto.error.ApiErrorResponse;
 import com.alejandro.mtonotification.application.dto.error.ValidationError;
 import com.alejandro.mtonotification.application.exception.BusinessException;
+import com.alejandro.mtonotification.application.exception.ConflictException;
+import com.alejandro.mtonotification.application.exception.DirectoryUnavailableException;
+import com.alejandro.mtonotification.application.exception.InvalidSortException;
 import com.alejandro.mtonotification.application.exception.NotFoundException;
+import com.alejandro.mtonotification.application.exception.UnprocessableException;
+import com.alejandro.mtonotification.application.exception.UnprocessableSourceEventException;
 import com.alejandro.mtonotification.application.exception.ValidationException;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validation;
@@ -145,6 +150,24 @@ class GlobalExceptionHandlerTest {
 
         assertEquals("REQ-VALIDATION", codeOf(response, HttpStatus.BAD_REQUEST));
         assertEquals(List.of("body", "title"), response.getBody().validationErrors().stream().map(ValidationError::field).toList());
+    }
+
+    @Test
+    void conflictsUnprocessableRequestsAndOutagesCarryTheirAggregateCodes() {
+        MockHttpServletRequest request = request("POST", "/api/v1/notifications/admin/broadcasts");
+
+        assertEquals("DLV-409", codeOf(handler.handleConflict(new ConflictException("Delivery", "already sent"), request), HttpStatus.CONFLICT));
+        assertEquals("APP-409", codeOf(handler.handleConflict(new ConflictException("Widget", "odd"), request), HttpStatus.CONFLICT));
+        assertEquals("NTF-422", codeOf(handler.handleUnprocessable(new UnprocessableException("Notification", "unknown audience"), request),
+                HttpStatus.UNPROCESSABLE_CONTENT));
+        assertEquals("NTF-503", codeOf(handler.handleDirectoryUnavailable(new DirectoryUnavailableException("Keycloak is down"), request),
+                HttpStatus.SERVICE_UNAVAILABLE));
+        assertEquals("SRC-422", codeOf(handler.handleBusiness(new UnprocessableSourceEventException("no entity name"), request),
+                HttpStatus.UNPROCESSABLE_CONTENT));
+
+        ResponseEntity<ApiErrorResponse> sort = handler.handleInvalidSort(new InvalidSortException("payload"), request);
+        assertEquals("REQ-400", codeOf(sort, HttpStatus.BAD_REQUEST));
+        assertEquals(List.of(new ValidationError("sort", "unsupported property 'payload'")), sort.getBody().validationErrors());
     }
 
     private static String codeOf(ResponseEntity<ApiErrorResponse> response, HttpStatus expected) {

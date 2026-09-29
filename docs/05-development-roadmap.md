@@ -3,18 +3,27 @@
 ## Hecho
 
 - **Fase 1**: esqueleto del servicio (seguridad por recurso, contrato de errores, correlación,
-  OpenAPI, perfiles, imagen, CI), los ficheros del realm (`keycloak/`) y esta documentación.
+  OpenAPI, perfiles, imagen, CI), los ficheros del realm (`keycloak/`) y esta documentación. En
+  `mto-platform`, la base, Mailpit, los eventos del realm y la cuenta de servicio; en
+  `mto-gateway`, la ruta; en `mto-backoffice`, la audiencia.
+- **Fase 2a**: el servicio. El modelo y `V1`, el inbox, la ingesta con lista blanca, la cola propia
+  de datos maestros con ráfagas, el lector de Keycloak (accesos y administración, marca de agua,
+  idempotencia por huella, rachas), las reglas en YAML con sus frenos, la bandeja por persona, el
+  correo con entregas reintentables, la retención y la API de administración.
 
 ## Siguiente
 
-- **Fase 2**: el modelo y la primera migración, el inbox y el consumo de los datos maestros de
-  `mto-configuration` (con ráfagas: una importación es una línea y un aviso), el lector de
-  Keycloak (accesos y administración, con marca de agua e idempotencia por huella), las reglas en
-  YAML, la bandeja, el correo por Mailpit, la retención. Después, los adaptadores y las reglas de
-  cada fuente según sus productores publican: `mto-configuration` (actor y fin de trabajo),
-  `mto-users`, `mto-maintenance`, `mto-stock`.
-- **Backoffice**: la campana con el contador, la bandeja (`notificaciones`) y el registro
-  (`actividad`).
+- **Fase 2b** (`mto-configuration`): `actor` y `correlationId` en el sobre (con el id del trabajo
+  en los hilos de importación, para que una importación sea una ráfaga), el evento
+  `configuration.job.finished`, las colas huérfanas fuera y los perfiles con sus permisos de
+  notificación.
+- **Fase 2c** (`mto-users`): el evento propio `users.user.<acción>` con la persona.
+- **Fase 2d** (aquí): los adaptadores y las reglas de `configuration.job.finished` y de
+  `users.user.*`, y el correlador que funde el evento de Keycloak con el de `mto-users`
+  (`superseded_by`).
+- **Fases 3 y 4**: el outbox de `mto-maintenance` y el de `mto-stock`, y sus adaptadores y reglas.
+- **Fase 5** (`mto-backoffice`): la campana con el contador, la bandeja (`notificaciones`) y el
+  registro (`actividad`).
 
 ## Más adelante: `mto-field`
 

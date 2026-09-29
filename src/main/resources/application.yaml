@@ -62,11 +62,32 @@ spring:
           multiplier: 2
           max-interval: 10s
 
+  # Los planificadores (lector de Keycloak, cierre de rafagas, despacho, purga) no pueden esperarse
+  # entre si: el lector habla con la red.
+  task:
+    scheduling:
+      pool:
+        size: ${SPRING_TASK_SCHEDULING_POOL_SIZE:4}
+
   # Timeouts del RestClient que habla con la Admin API de Keycloak. Claves en plural de Boot 4.1.
   http:
     clients:
       connect-timeout: ${APP_KEYCLOAK_CONNECT_TIMEOUT:2s}
       read-timeout: ${APP_KEYCLOAK_READ_TIMEOUT:10s}
+
+  # El SMTP por el que salen los avisos urgentes. En mto-platform es Mailpit, sin autenticacion;
+  # en un entorno desplegado, el servidor de la organizacion con sus credenciales.
+  mail:
+    host: ${SPRING_MAIL_HOST:localhost}
+    port: ${SPRING_MAIL_PORT:1025}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      "mail.smtp.auth": ${SPRING_MAIL_SMTP_AUTH:false}
+      "mail.smtp.starttls.enable": ${SPRING_MAIL_SMTP_STARTTLS:false}
+      "mail.smtp.connectiontimeout": 5000
+      "mail.smtp.timeout": 10000
+      "mail.smtp.writetimeout": 10000
 
 management:
   endpoints:
@@ -90,6 +111,10 @@ management:
     # que se recupera sola.
     rabbit:
       enabled: ${MANAGEMENT_HEALTH_RABBIT_ENABLED:false}
+    # Lo mismo con el SMTP: sin el, el correo espera en sus entregas y se reintenta; la bandeja y el
+    # registro siguen. Y el indicador abre una conexion SMTP en cada sonda.
+    mail:
+      enabled: ${MANAGEMENT_HEALTH_MAIL_ENABLED:false}
     # Los circuitos (el de Keycloak) entran como componente informativo, no deciden el global.
     circuitbreakers:
       enabled: true
@@ -179,6 +204,123 @@ app:
   # conexion y la aplicacion arranca sin broker.
   rabbitmq:
     enabled: ${APP_RABBITMQ_ENABLED:true}
+    # Una fuente por emisor: su exchange y su routing key son contrato del emisor; la cola, su
+    # DLX y su DLQ son de este servicio, que es quien consume. Las fuentes de mto-configuration
+    # (trabajos), mto-maintenance, mto-stock y mto-users se anaden con su fase.
+    sources:
+      master-data:
+        exchange: ${APP_RABBITMQ_MASTER_DATA_EXCHANGE:mto.master-data.exchange}
+        routing-key: "${APP_RABBITMQ_MASTER_DATA_ROUTING_KEY:mto.master-data.#}"
+        queue: ${APP_RABBITMQ_MASTER_DATA_QUEUE:mto.notification.master-data.queue}
+        dead-letter-exchange: ${APP_RABBITMQ_MASTER_DATA_DEAD_LETTER_EXCHANGE:mto.notification.master-data.queue.dlx}
+        dead-letter-queue: ${APP_RABBITMQ_MASTER_DATA_DEAD_LETTER_QUEUE:mto.notification.master-data.queue.dlq}
+        dead-letter-routing-key: ${APP_RABBITMQ_MASTER_DATA_DEAD_LETTER_ROUTING_KEY:mto.notification.master-data.queue.dlq}
+        listener-enabled: ${APP_RABBITMQ_MASTER_DATA_LISTENER_ENABLED:true}
+
+  # La Admin API de Keycloak: el lector de eventos de acceso y de administracion, y el directorio
+  # con el que se resuelven las direcciones de una audiencia. Todo con la cuenta de servicio
+  # mto-notification-svc (registro 'mto-services' de spring.security.oauth2.client).
+  keycloak:
+    base-url: ${KEYCLOAK_AUTH_SERVER_URL:http://auth.mto.local:8082}
+    realm: ${KEYCLOAK_REALM:mto}
+    client-registration-id: mto-services
+    circuit-breaker:
+      sliding-window-size: 10
+      minimum-number-of-calls: 5
+      failure-rate-threshold: 50
+      wait-duration-in-open-state: ${APP_KEYCLOAK_CIRCUIT_BREAKER_WAIT:30s}
+      timeout: ${APP_KEYCLOAK_CIRCUIT_BREAKER_TIMEOUT:15s}
+    events:
+      # Con false no se sondea nada y la aplicacion arranca sin la cuenta de servicio.
+      enabled: ${APP_KEYCLOAK_EVENTS_ENABLED:true}
+      login-enabled: ${APP_KEYCLOAK_LOGIN_EVENTS_ENABLED:true}
+      admin-enabled: ${APP_KEYCLOAK_ADMIN_EVENTS_ENABLED:true}
+      poll-interval: ${APP_KEYCLOAK_EVENTS_POLL_INTERVAL:PT20S}
+      initial-delay: ${APP_KEYCLOAK_EVENTS_INITIAL_DELAY:PT15S}
+      page-size: 100
+      # Tope de paginas por pasada: un arranque tras dias parado no recorre la tabla entera de una
+      # vez; la marca avanza hasta donde llego y la siguiente pasada sigue.
+      max-pages-per-poll: 50
+      # Keycloak fecha el evento al construirlo y lo persiste al final de la peticion: uno con
+      # time anterior a la marca puede hacerse visible despues. Se relee este solape; los
+      # repetidos los para el inbox.
+      overlap: PT2M
+      # Primer arranque: desde hace una hora. Lo anterior lo tiene Keycloak (7 dias) si hace falta.
+      initial-lookback: PT1H
+      lease-ttl: PT2M
+      # El cliente con el que mto-users administra el realm: sus cambios llevan este clientId en
+      # los eventos de administracion y son 'de la aplicacion'; cualquier otro es un cambio hecho
+      # fuera de ella.
+      users-service-client-id: ${APP_KEYCLOAK_USERS_SERVICE_CLIENT_ID:mto-users-svc}
+    directory:
+      cache-ttl: PT5M
+      page-size: 200
+      # Los perfiles del dominio son los roles de realm con este prefijo: un rol de cliente se
+      # concede tambien a traves de ellos, y Keycloak no expande compuestos al listar miembros.
+      profile-prefix: mto-
+
+  notification:
+    # Las reglas: un YAML versionado con el codigo, sobrescribible por entorno.
+    rules-location: ${APP_NOTIFICATION_RULES_LOCATION:classpath:notification-rules.yml}
+    rules:
+      variables:
+        large-burst-threshold: ${APP_NOTIFICATION_LARGE_BURST_THRESHOLD:50}
+        users-service-client-id: ${APP_KEYCLOAK_USERS_SERVICE_CLIENT_ID:mto-users-svc}
+    access:
+      streak:
+        # Tres fallos del mismo usuario o de la misma IP en diez minutos: UN aviso.
+        threshold: ${APP_NOTIFICATION_STREAK_THRESHOLD:3}
+        window: ${APP_NOTIFICATION_STREAK_WINDOW:PT10M}
+    burst:
+      # Una rafaga se cierra a los 30 s sin eventos nuevos, o a los 10 minutos de abrirse.
+      idle-timeout: ${APP_NOTIFICATION_BURST_IDLE_TIMEOUT:PT30S}
+      max-window: ${APP_NOTIFICATION_BURST_MAX_WINDOW:PT10M}
+      sample-size: 20
+      close-fixed-delay: ${APP_NOTIFICATION_BURST_CLOSE_DELAY:PT10S}
+      close-enabled: ${APP_NOTIFICATION_BURST_CLOSE_ENABLED:true}
+      # Lo que NO se agrega: una linea por evento, con su aviso.
+      direct-deletions: track,station,profile,disconnector,section-insulator
+      direct-creations: execution-package
+    inbox:
+      unread-count-cap: 100
+      max-page-size: 100
+    delivery:
+      enabled: ${APP_NOTIFICATION_DELIVERY_ENABLED:true}
+      fixed-delay: ${APP_NOTIFICATION_DELIVERY_FIXED_DELAY:PT15S}
+      initial-delay: ${APP_NOTIFICATION_DELIVERY_INITIAL_DELAY:PT20S}
+      batch-size: 50
+      max-attempts: 8
+      initial-retry-delay: PT30S
+      max-retry-delay: PT1H
+      # Una entrega reclamada y no resuelta (la instancia murio) vuelve a estar disponible.
+      claim-visibility-timeout: PT5M
+      # Tras confirmar una ingesta con entregas, se despacha sin esperar al planificador.
+      immediate-dispatch: true
+    email:
+      enabled: ${APP_NOTIFICATION_EMAIL_ENABLED:true}
+      from: ${APP_NOTIFICATION_EMAIL_FROM:notificaciones@mto.local}
+      subject-prefix: "[MTO]"
+      # Raiz absoluta para los enlaces del correo: el backoffice.
+      link-base-url: ${APP_NOTIFICATION_LINK_BASE_URL:http://localhost:8085}
+      # Tope por direccion y hora; lo que sobra se queda en la bandeja.
+      max-per-hour: 20
+    retention:
+      purge-enabled: ${APP_NOTIFICATION_RETENTION_PURGE_ENABLED:true}
+      cron: ${APP_NOTIFICATION_RETENTION_CRON:0 17 3 * * *}
+      batch-size: 1000
+      max-batches-per-run: 50
+      # Keycloak caduca sus eventos a los 7 dias: este servicio es el archivo.
+      activity:
+        access: P90D
+        users: P400D
+        configuration: P400D
+        maintenance: P400D
+        stock: P400D
+        system: P90D
+      notifications: P180D
+      inbox: P7D
+      bursts: P1D
+      throttles: P1D
 
   # Firma de los mensajes, sobre los bytes que viajan de verdad. EL MISMO VALOR que en los servicios
   # que publican. DISABLED no comprueba nada; OPTIONAL rechaza una firma que no cuadra pero acepta

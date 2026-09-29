@@ -36,6 +36,22 @@ app:
   rabbitmq:
     enabled: ${APP_RABBITMQ_ENABLED:false}
 
+  # Todo lo que corre solo se apaga: el lector de Keycloak, el despachador de entregas, el cierre
+  # de rafagas, la purga y el correo. Cada test enciende lo que prueba llamandolo.
+  keycloak:
+    events:
+      enabled: ${APP_KEYCLOAK_EVENTS_ENABLED:false}
+  notification:
+    burst:
+      close-enabled: false
+    delivery:
+      enabled: false
+      immediate-dispatch: false
+    email:
+      enabled: ${APP_NOTIFICATION_EMAIL_ENABLED:false}
+    retention:
+      purge-enabled: false
+
 management:
   endpoint:
     health:

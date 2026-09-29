@@ -11,23 +11,25 @@ Micrometer/OpenTelemetry, Testcontainers.
 
 ```
 com.alejandro.mtonotification
-├── domain.model            tipos de evento, audiencias, casado de reglas (sin Spring, sin JPA)
+├── domain.model            tipos de evento, actor, audiencias, borrador, reglas, lista blanca, huellas (sin Spring, sin JPA)
 ├── application
 │   ├── dto.<recurso>       records de peticion/respuesta con Bean Validation
 │   ├── dto.common          PageResponse, PageMetadataResponse
 │   ├── dto.error           ApiErrorResponse, ValidationError
 │   ├── service             interfaces publicas
-│   ├── service.impl        implementaciones package-private y ayudantes compartidos
+│   ├── service.impl        implementaciones package-private: inbox, adaptadores, ingesta, detectores,
+│   │                       rafagas, reglas (YAML + SpEL), factoria, despachador, lector de Keycloak, purga
 │   ├── mapper              MapStruct, entidad -> respuesta solo
 │   └── exception           excepciones de negocio que traduce GlobalExceptionHandler
 ├── infrastructure
 │   ├── persistence.entity | .repository | .specification
 │   ├── web                 NotificationApiPaths, controladores, web.exception
-│   ├── messaging.rabbitmq  consumidores de las fuentes, inbox
-│   ├── keycloak            lector de eventos y directorio sobre RestClient
-│   └── mail                canal de correo
-└── configuration           security, web (correlacion), auditoria JPA, OpenAPI, rabbitmq,
-                            messaging (firma), keycloak, mail, rules, scheduling
+│   ├── messaging.rabbitmq  consumidor por fuente sobre SourceEventConsumer, comando del inbox
+│   ├── keycloak            RestKeycloakEventsClient y RestKeycloakDirectoryClient sobre RestClient
+│   └── mail                EmailChannel
+└── configuration           security, web (correlacion), auditoria JPA, OpenAPI, rabbitmq (fuentes),
+                            messaging (firma), keycloak (cliente, sondeo), notification (properties),
+                            mail, scheduling (rafagas, entregas, retencion)
 ```
 
 Reglas que mantienen honestas las capas:
@@ -44,7 +46,7 @@ Reglas que mantienen honestas las capas:
 
 | Dirección | Par | Mecanismo |
 |---|---|---|
-| Entrante | `mto-configuration`, `mto-maintenance`, `mto-stock`, `mto-users` | RabbitMQ, una cola propia por fuente con DLX/DLQ → inbox idempotente |
+| Entrante | `mto-configuration` (fase 2a); `mto-maintenance`, `mto-stock`, `mto-users` después | RabbitMQ, una cola propia por fuente con DLX/DLQ → inbox idempotente |
 | Saliente | Keycloak (Admin API) | REST con la cuenta de servicio `mto-notification-svc`, circuito `keycloak`, marca de agua |
 | Saliente | SMTP (Mailpit en local) | Correo para lo urgente |
 | Entrante | `mto-gateway` / backoffice | JWT del realm `mto` con audiencia `mto-notification-api` |
@@ -59,5 +61,8 @@ Reglas que mantienen honestas las capas:
   en cada error.
 - **Auditoría**: `created_by`/`updated_by` a través de `AuditActorResolver`
   (`system` para los procesos de fondo, `unknown` para una petición sin usuario).
+- **Ciclos rotos a propósito**: la factoría de notificaciones pide el despacho tras el commit a
+  través de un `ObjectProvider<DeliveryDispatcher>` (el despachador ingiere eventos, que pasan por
+  las reglas, que crean notificaciones), y el detector de rachas recibe el ingestor con `@Lazy`.
 - **Trazas**: `spring-boot-starter-opentelemetry` hacia el colector de `mto-platform`, incluida la
   traza que llega en las cabeceras de RabbitMQ.

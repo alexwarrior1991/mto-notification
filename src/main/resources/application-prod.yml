@@ -51,7 +51,19 @@ spring:
     password: ${SPRING_RABBITMQ_PASSWORD}
     virtual-host: ${SPRING_RABBITMQ_VIRTUAL_HOST:/}
 
+  # El SMTP tampoco tiene valor por defecto: sin el, con el correo encendido, no se arranca.
+  mail:
+    host: ${SPRING_MAIL_HOST}
+    port: ${SPRING_MAIL_PORT:25}
+
 app:
+  keycloak:
+    base-url: ${KEYCLOAK_AUTH_SERVER_URL}
+    realm: ${KEYCLOAK_REALM}
+  notification:
+    email:
+      # Los enlaces del correo apuntan al backoffice del entorno: sin el, no se arranca.
+      link-base-url: ${APP_NOTIFICATION_LINK_BASE_URL}
   security:
     client-id: ${KEYCLOAK_CLIENT_ID}
     audience-validation-enabled: ${KEYCLOAK_AUDIENCE_VALIDATION_ENABLED:true}

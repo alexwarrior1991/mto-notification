@@ -79,9 +79,15 @@ class KeycloakAuthorizationIT {
                     .withExposedPorts(HTTP_PORT)
                     .withEnv("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
                     .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
+                    // El nombre dentro del contenedor tiene que ser <realm>-realm.json: un fichero cuyo
+                    // nombre contiene "-realm.json" va por DirImportProvider, que saca el nombre del
+                    // realm del nombre del fichero y lo vincula a la sesion en la ultima transaccion
+                    // (la que inicializa las cuentas de servicio). Con "mto-notification-test-realm.json"
+                    // buscaba un realm "mto-notification-test", no lo encontraba y la importacion moria
+                    // con "Session not bound to a realm" al enlazar el usuario de mto-notification-svc.
                     .withCopyFileToContainer(
                             MountableFile.forClasspathResource("keycloak/mto-notification-test-realm.json"),
-                            "/opt/keycloak/data/import/mto-notification-test-realm.json")
+                            "/opt/keycloak/data/import/" + REALM + "-realm.json")
                     .withCommand("start-dev", "--import-realm")
                     .waitingFor(Wait.forHttp("/realms/" + REALM + "/.well-known/openid-configuration")
                             .forPort(HTTP_PORT)

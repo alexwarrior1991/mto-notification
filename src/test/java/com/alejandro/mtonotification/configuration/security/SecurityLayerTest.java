@@ -155,6 +155,37 @@ class SecurityLayerTest {
                 .anyMatch(violation -> violation.getMessage().contains("allowed-origins")));
     }
 
+    /**
+     * Las claves con las que la bandeja se resuelve al leer: la persona, cada rol de realm (los
+     * perfiles son roles compuestos de realm y el token trae su nombre) y cada rol de cliente.
+     */
+    @Test
+    void currentUserServiceDerivesTheAudienceKeysFromTheToken() {
+        CurrentUserService currentUserService = new CurrentUserService();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(
+                jwt(Map.of(JwtClaimNames.PREFERRED_USERNAME, "alice",
+                        JwtClaimNames.REALM_ACCESS, Map.of(JwtClaimNames.ROLES, List.of("mto-ops", "offline_access")),
+                        JwtClaimNames.RESOURCE_ACCESS, Map.of(
+                                "mto-notification-api", Map.of(JwtClaimNames.ROLES, List.of("notification-inbox", "notification-admin")),
+                                "account", Map.of(JwtClaimNames.ROLES, List.of("view-profile")),
+                                "broken", "not a map"))),
+                List.of(new SimpleGrantedAuthority("ROLE_NOTIFICATION_INBOX")),
+                "alice"
+        ));
+
+        assertEquals(List.of("USER:alice", "PROFILE:mto-ops", "PROFILE:offline_access",
+                        "CLIENT_ROLE:mto-notification-api:notification-inbox", "CLIENT_ROLE:mto-notification-api:notification-admin",
+                        "CLIENT_ROLE:account:view-profile"),
+                currentUserService.getAudienceKeys());
+
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(
+                jwt(Map.of(JwtClaimNames.PREFERRED_USERNAME, "bob")), List.of(), "bob"));
+        assertEquals(List.of("USER:bob"), currentUserService.getAudienceKeys(), "sin roles, solo la persona");
+
+        SecurityContextHolder.clearContext();
+        assertTrue(currentUserService.getAudienceKeys().isEmpty());
+    }
+
     private static SecurityProperties properties(boolean audienceValidationEnabled, String requiredAudience, List<String> allowedOrigins) {
         return new SecurityProperties(
                 CLIENT_ID,

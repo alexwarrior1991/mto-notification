@@ -97,6 +97,16 @@
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true
+    },
+    {
+      "clientId": "mto-notification-svc",
+      "name": "mto-notification (service account)",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "mto-notification-svc-secret"
     }
   ],
   "users": [
@@ -198,6 +208,21 @@
           "temporary": false
         }
       ]
+    },
+    {
+      "username": "service-account-mto-notification-svc",
+      "enabled": true,
+      "serviceAccountClientId": "mto-notification-svc",
+      "clientRoles": {
+        "realm-management": [
+          "view-events",
+          "view-users",
+          "query-users",
+          "view-clients",
+          "query-clients",
+          "view-realm"
+        ]
+      }
     }
   ]
 }
