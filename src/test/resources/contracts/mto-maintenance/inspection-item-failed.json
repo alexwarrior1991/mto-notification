@@ -1,0 +1,48 @@
+{
+  "operationId": "a0000000-0000-4000-8000-000000000007",
+  "referenceId": "inspection-70000000-0000-4000-8000-000000000001",
+  "origin": "mto-maintenance",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "MAINTENANCE_INSPECTION_ITEM_FAILED",
+  "data": {
+    "entityName": "inspection",
+    "entityId": "70000000-0000-4000-8000-000000000001",
+    "eventName": "item-failed",
+    "values": {
+      "code": "INS-000031",
+      "result": "MAJOR_DEFECT",
+      "inspectionKind": "VISUAL",
+      "inspectionDate": "2026-09-28",
+      "inspector": "mantenimiento.tecnico",
+      "assetId": "20000000-0000-4000-8000-000000000001",
+      "assetCode": "PRF-12-2.27",
+      "assetName": "12-2.27",
+      "assetType": "PROFILE",
+      "executionPackageId": 6,
+      "trackId": 2,
+      "stationId": null,
+      "kp": 12847.990,
+      "originOrderId": null,
+      "originOrderCode": null,
+      "shiftId": null,
+      "shiftCode": null,
+      "itemId": "80000000-0000-4000-8000-000000000001",
+      "itemCode": "CW_HEIGHT",
+      "itemLabel": "Contact wire height",
+      "itemResult": "DEFECT",
+      "measuredValue": 5620,
+      "valueAfterAdjustment": null,
+      "unit": "mm",
+      "minValue": 5000,
+      "maxValue": 5500,
+      "notes": "Above tolerance"
+    }
+  },
+  "messageHash": "e2148c010f22a29e220362a4dcd84357c67ad1080ba73e18c7a57c9c24bf269c",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000031",
+    "username": "mantenimiento.tecnico",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

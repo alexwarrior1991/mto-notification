@@ -202,6 +202,138 @@ rules:
       window: 5m
       key: "#{event.actorId ?: payload.clientId}"
 
+  # --- Mantenimiento (mto-maintenance) ------------------------------------------------------------
+  # Lo que mto-maintenance cuenta desde su outbox, con la persona que lo hizo. Las transiciones
+  # ordinarias (planificar, iniciar), un defecto leve, un punto de checklist en DEFECT y las
+  # inspecciones OK se registran sin aviso.
+
+  - key: maintenance-order-urgent
+    event: maintenance.order.created
+    when: "payload.type == 'URGENT'"
+    severity: CRITICAL
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox, email]
+    title: "Orden urgente #{payload.code}: #{payload.title}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha abierto la orden urgente #{payload.code} sobre #{payload.assetCode}#{payload.assetName != null ? ' (' + payload.assetName + ')' : ''}#{payload.trackId != null ? ', via ' + payload.trackId : ''}."
+    link: "/mantenimiento/ordenes/#{event.subjectId}"
+
+  - key: maintenance-order-assigned
+    event: [maintenance.order.status-changed, maintenance.order.reassigned]
+    when: "payload.assignedUser != null and (event.type == 'maintenance.order.reassigned' or payload.to == 'ASSIGNED')"
+    audiences: ["USER:#{payload.assignedUser}"]
+    channels: [inbox]
+    title: "Orden #{payload.code} asignada a ti"
+    body: "#{event.actorUsername ?: 'Un proceso'} te ha asignado la orden #{payload.code} (#{payload.title}) sobre #{payload.assetCode}#{payload.plannedDate != null ? ', prevista para el ' + payload.plannedDate : ''}#{payload.teamCode != null ? ', con el equipo ' + payload.teamCode : ''}."
+    link: "/mantenimiento/ordenes/#{event.subjectId}"
+
+  - key: maintenance-order-closed
+    event: maintenance.order.status-changed
+    when: "payload.to == 'COMPLETED' or payload.to == 'CANCELLED'"
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "Orden #{payload.code} #{payload.to == 'COMPLETED' ? 'completada' : 'cancelada'}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{payload.to == 'COMPLETED' ? 'completado' : 'cancelado'} la orden #{payload.code} (#{payload.title}) sobre #{payload.assetCode}#{payload.comment != null ? ': ' + payload.comment : ''}."
+    link: "/mantenimiento/ordenes/#{event.subjectId}"
+
+  - key: maintenance-defect-critical
+    event: maintenance.defect.created
+    when: "payload.severity == 'CRITICAL'"
+    severity: CRITICAL
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox, email]
+    title: "Defecto critico #{payload.code} en #{payload.assetCode}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha registrado el defecto critico #{payload.code} en #{payload.assetCode}: #{payload.description}#{payload.inspectionCode != null ? ' (inspeccion ' + payload.inspectionCode + ')' : ''}#{payload.orderCode != null ? ' (orden ' + payload.orderCode + ')' : ''}"
+    link: "/mantenimiento/defectos/#{event.subjectId}"
+
+  - key: maintenance-defect-high
+    event: maintenance.defect.created
+    when: "payload.severity == 'HIGH'"
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "Defecto grave #{payload.code} en #{payload.assetCode}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha registrado el defecto grave #{payload.code} en #{payload.assetCode}: #{payload.description}#{payload.repairPlannedDate != null ? '. Reparacion prevista para el ' + payload.repairPlannedDate : ''}"
+    link: "/mantenimiento/defectos/#{event.subjectId}"
+
+  - key: maintenance-inspection-unsafe
+    event: maintenance.inspection.created
+    when: "payload.result == 'UNSAFE'"
+    severity: CRITICAL
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox, email]
+    title: "Inspeccion #{payload.code} en #{payload.assetCode}: estado inseguro"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha registrado la inspeccion #{payload.code} sobre #{payload.assetCode} con resultado UNSAFE#{payload.inspector != null ? ' (inspector ' + payload.inspector + ')' : ''}. Toca abrir la orden correctiva urgente desde la inspeccion."
+    link: "/mantenimiento/inspecciones/#{event.subjectId}"
+
+  - key: maintenance-inspection-defect
+    event: maintenance.inspection.created
+    when: "payload.result == 'MAJOR_DEFECT' or payload.result == 'MINOR_DEFECT'"
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "Inspeccion #{payload.code} en #{payload.assetCode}: #{payload.result == 'MAJOR_DEFECT' ? 'defecto mayor' : 'defecto menor'}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha registrado la inspeccion #{payload.code} sobre #{payload.assetCode} con resultado #{payload.result}#{payload.inspector != null ? ' (inspector ' + payload.inspector + ')' : ''}."
+    link: "/mantenimiento/inspecciones/#{event.subjectId}"
+
+  - key: maintenance-inspection-corrective-order
+    event: maintenance.inspection.corrective-order-created
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "Orden correctiva #{payload.orderCode} desde la inspeccion #{payload.code}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha generado la orden #{payload.orderType} #{payload.orderCode} (prioridad #{payload.priority}) desde la inspeccion #{payload.code} sobre #{payload.assetCode}#{payload.defectCode != null ? ', por el defecto ' + payload.defectCode : ''}."
+    link: "/mantenimiento/ordenes/#{payload.orderId}"
+
+  - key: maintenance-shift
+    event: [maintenance.shift.started, maintenance.shift.closed]
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "Turno #{payload.code} #{event.type == 'maintenance.shift.started' ? 'iniciado' : 'cerrado'}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'maintenance.shift.started' ? 'iniciado' : 'cerrado'} el turno #{payload.code} del #{payload.shiftDate}#{payload.teamCode != null ? ' (equipo ' + payload.teamCode + ')' : ''} en las vias #{payload.trackIds}#{event.type == 'maintenance.shift.closed' and payload.netWorkMinutes != null ? ': ' + payload.netWorkMinutes + ' minutos netos' : ''}."
+    link: "/mantenimiento/turnos/#{event.subjectId}"
+
+  - key: maintenance-material-no-stock
+    event: maintenance.material.rejected
+    when: "payload.stockErrorCode == 'STK-001'"
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-warehouse-admin]
+    channels: [inbox]
+    title: "Sin existencias de #{payload.materialCode} para la orden #{payload.orderCode}"
+    body: "El almacen no tiene #{payload.plannedQuantity} #{payload.unit} de #{payload.materialCode}#{payload.materialDescription != null ? ' (' + payload.materialDescription + ')' : ''} para la orden #{payload.orderCode}: #{payload.reason}"
+    link: "/mantenimiento/ordenes/#{payload.orderId}"
+
+  - key: maintenance-material-rejected
+    event: maintenance.material.rejected
+    when: "payload.stockErrorCode != 'STK-001'"
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "El almacen rechaza #{payload.materialCode} de la orden #{payload.orderCode}"
+    body: "mto-stock ha rechazado #{payload.step} de #{payload.materialCode} para la orden #{payload.orderCode}#{payload.stockErrorCode != null ? ' (' + payload.stockErrorCode + ')' : ''}: #{payload.reason}"
+    link: "/mantenimiento/ordenes/#{payload.orderId}"
+
+  - key: maintenance-material-stock-unavailable
+    event: [maintenance.material.failed, maintenance.material.in-doubt]
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "El almacen no responde: #{payload.materialCode} de la orden #{payload.orderCode}"
+    body: "mto-stock no ha contestado a #{payload.step} de #{payload.materialCode} para la orden #{payload.orderCode}#{event.type == 'maintenance.material.in-doubt' ? ' y la peticion ' + payload.request + ' queda en duda' : ''}. Se reintenta solo cada cinco minutos; la linea tambien se puede sincronizar a mano."
+    link: "/mantenimiento/ordenes/#{payload.orderId}"
+    throttle:
+      window: 1h
+      key: "#{payload.orderId}"
+
+  - key: maintenance-asset-disabled
+    event: maintenance.asset.disabled
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "Activo #{payload.code} desactivado en mantenimiento"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha desactivado el activo #{payload.code} (#{payload.name}, #{payload.type})#{payload.sourceService != null ? ', sincronizado desde ' + payload.sourceService + ': sigue desactivado aunque el origen lo reactive, hasta que alguien lo reactive aqui' : ''}."
+    link: "/mantenimiento/activos"
+
+  - key: maintenance-preventive-due-soon
+    event: maintenance.preventive.due-soon
+    audiences: [PROFILE:mto-maintenance-manager]
+    channels: [inbox, email]
+    title: "#{payload.count} preventivos vencen en #{payload.horizonDays} dias#{payload.overdueCount > 0 ? ' (' + payload.overdueCount + ' ya vencidos)' : ''}"
+    body: "A #{payload.date} hay #{payload.count} activos con el preventivo a vencer en los proximos #{payload.horizonDays} dias, #{payload.overdueCount} de ellos ya vencidos o nunca revisados. Los primeros: #{payload.assets.![assetCode]}."
+    link: "/mantenimiento/activos"
+
   # --- El propio servicio -------------------------------------------------------------------------
 
   - key: system-source-stalled

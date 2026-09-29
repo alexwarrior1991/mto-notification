@@ -1,0 +1,46 @@
+{
+  "operationId": "a0000000-0000-4000-8000-000000000001",
+  "referenceId": "order-40000000-0000-4000-8000-000000000002",
+  "origin": "mto-maintenance",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "MAINTENANCE_ORDER_CREATED",
+  "data": {
+    "entityName": "order",
+    "entityId": "40000000-0000-4000-8000-000000000002",
+    "eventName": "created",
+    "values": {
+      "code": "MO-000124",
+      "title": "Broken contact wire at kp 12+848",
+      "type": "URGENT",
+      "priority": "CRITICAL",
+      "status": "DRAFT",
+      "assetId": "20000000-0000-4000-8000-000000000001",
+      "assetCode": "PRF-12-2.27",
+      "assetName": "12-2.27",
+      "assetType": "PROFILE",
+      "executionPackageId": 6,
+      "trackId": 2,
+      "stationId": null,
+      "startKp": 12847.990,
+      "endKp": 12847.990,
+      "plannedDate": null,
+      "actualStartDate": null,
+      "actualEndDate": null,
+      "teamId": null,
+      "teamCode": null,
+      "teamName": null,
+      "assignedUser": null,
+      "originInspectionId": null,
+      "originDefectId": null,
+      "stockProjectId": null,
+      "comment": "Order created"
+    }
+  },
+  "messageHash": "63f411370b179f5d2fd7251af785857885dca9ba2f864c85089bec1e8d08c06a",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000031",
+    "username": "mantenimiento.tecnico",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

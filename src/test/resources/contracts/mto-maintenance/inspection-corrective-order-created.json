@@ -1,0 +1,44 @@
+{
+  "operationId": "a0000000-0000-4000-8000-000000000009",
+  "referenceId": "inspection-70000000-0000-4000-8000-000000000001",
+  "origin": "mto-maintenance",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "MAINTENANCE_INSPECTION_CORRECTIVE_ORDER_CREATED",
+  "data": {
+    "entityName": "inspection",
+    "entityId": "70000000-0000-4000-8000-000000000001",
+    "eventName": "corrective-order-created",
+    "values": {
+      "code": "INS-000031",
+      "result": "MAJOR_DEFECT",
+      "inspectionKind": "VISUAL",
+      "inspectionDate": "2026-09-28",
+      "inspector": "mantenimiento.tecnico",
+      "assetId": "20000000-0000-4000-8000-000000000001",
+      "assetCode": "PRF-12-2.27",
+      "assetName": "12-2.27",
+      "assetType": "PROFILE",
+      "executionPackageId": 6,
+      "trackId": 2,
+      "stationId": null,
+      "kp": 12847.990,
+      "originOrderId": null,
+      "originOrderCode": null,
+      "shiftId": null,
+      "shiftCode": null,
+      "orderId": "40000000-0000-4000-8000-000000000003",
+      "orderCode": "MO-000125",
+      "orderType": "CORRECTIVE",
+      "priority": "HIGH",
+      "defectId": "60000000-0000-4000-8000-000000000001",
+      "defectCode": "DEF-000045"
+    }
+  },
+  "messageHash": "8eca507d879e32d556980a1eb4f04fccecf61015d2e9366afdbf592fce263c03",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000032",
+    "username": "mantenimiento.responsable",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

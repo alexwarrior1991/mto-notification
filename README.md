@@ -126,7 +126,8 @@ frenos por regla y la marca del lector. Detalle en [`docs/03-database.md`](docs/
 | Trabajos de `mto-configuration` | Cola propia `mto.notification.configuration.queue` sobre `mto.configuration.exchange` (`mto.configuration.#`) | `job.finished`: una línea por trabajo con sus recuentos y un aviso a quien lo lanzó; `WARNING` si acabó mal |
 | `mto-users` | Cola propia `mto.notification.users.queue` sobre `mto.users.exchange` (`mto.users.#`) | Una línea por acción administrativa con la persona; el evento de administración de Keycloak del mismo cambio se funde con ella |
 | Accesos y administración de Keycloak | Sondeo de la Admin API cada 20 s con `mto-notification-svc` (`view-events`), marca de agua por fuente y arrendamiento | Idempotente por huella del evento; tres fallos seguidos son una racha; un cambio hecho desde la consola es «fuera de la aplicación» |
-| `mto-maintenance`, `mto-stock` | Fases 3 y 4 | |
+| `mto-maintenance` | Cola propia `mto.notification.maintenance.queue` sobre `mto.maintenance.exchange` (`mto.maintenance.#`) | Una línea por evento de su outbox (órdenes y sus transiciones, defectos, inspecciones, turnos, líneas de material, activos desactivados allí, el aviso diario de preventivos) con la persona y la correlación de la petición |
+| `mto-stock` | Fase 4 | |
 
 Todo en [`docs/06-messaging.md`](docs/06-messaging.md), reglas incluidas.
 

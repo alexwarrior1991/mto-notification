@@ -205,8 +205,8 @@ app:
   rabbitmq:
     enabled: ${APP_RABBITMQ_ENABLED:true}
     # Una fuente por emisor: su exchange y su routing key son contrato del emisor; la cola, su
-    # DLX y su DLQ son de este servicio, que es quien consume. Las fuentes de mto-maintenance y
-    # mto-stock se anaden con su fase.
+    # DLX y su DLQ son de este servicio, que es quien consume. La fuente de mto-stock se anade con
+    # su fase.
     sources:
       master-data:
         exchange: ${APP_RABBITMQ_MASTER_DATA_EXCHANGE:mto.master-data.exchange}
@@ -236,6 +236,18 @@ app:
         dead-letter-queue: ${APP_RABBITMQ_USERS_DEAD_LETTER_QUEUE:mto.notification.users.queue.dlq}
         dead-letter-routing-key: ${APP_RABBITMQ_USERS_DEAD_LETTER_ROUTING_KEY:mto.notification.users.queue.dlq}
         listener-enabled: ${APP_RABBITMQ_USERS_LISTENER_ENABLED:true}
+      # Lo que mto-maintenance cuenta de si mismo (docs/06-messaging.md de ese repositorio): las
+      # ordenes y sus transiciones, los defectos, las inspecciones, los turnos, las lineas de
+      # material que el almacen rechaza o no contesta, los activos desactivados alli y, una vez al
+      # dia, los preventivos a vencer. Sale de su outbox, con quien lo hizo y su correlacion.
+      maintenance:
+        exchange: ${APP_RABBITMQ_MAINTENANCE_EXCHANGE:mto.maintenance.exchange}
+        routing-key: "${APP_RABBITMQ_MAINTENANCE_ROUTING_KEY:mto.maintenance.#}"
+        queue: ${APP_RABBITMQ_MAINTENANCE_QUEUE:mto.notification.maintenance.queue}
+        dead-letter-exchange: ${APP_RABBITMQ_MAINTENANCE_DEAD_LETTER_EXCHANGE:mto.notification.maintenance.queue.dlx}
+        dead-letter-queue: ${APP_RABBITMQ_MAINTENANCE_DEAD_LETTER_QUEUE:mto.notification.maintenance.queue.dlq}
+        dead-letter-routing-key: ${APP_RABBITMQ_MAINTENANCE_DEAD_LETTER_ROUTING_KEY:mto.notification.maintenance.queue.dlq}
+        listener-enabled: ${APP_RABBITMQ_MAINTENANCE_LISTENER_ENABLED:true}
 
   # La Admin API de Keycloak: el lector de eventos de acceso y de administracion, y el directorio
   # con el que se resuelven las direcciones de una audiencia. Todo con la cuenta de servicio

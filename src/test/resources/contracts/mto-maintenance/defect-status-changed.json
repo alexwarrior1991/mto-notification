@@ -1,0 +1,46 @@
+{
+  "operationId": "a0000000-0000-4000-8000-000000000005",
+  "referenceId": "defect-60000000-0000-4000-8000-000000000001",
+  "origin": "mto-maintenance",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "MAINTENANCE_DEFECT_STATUS_CHANGED",
+  "data": {
+    "entityName": "defect",
+    "entityId": "60000000-0000-4000-8000-000000000001",
+    "eventName": "status-changed",
+    "values": {
+      "code": "DEF-000045",
+      "severity": "HIGH",
+      "status": "IN_PROGRESS",
+      "description": "Cracked insulator",
+      "assetId": "20000000-0000-4000-8000-000000000001",
+      "assetCode": "PRF-12-2.27",
+      "assetName": "12-2.27",
+      "assetType": "PROFILE",
+      "executionPackageId": 6,
+      "trackId": 2,
+      "stationId": null,
+      "startKp": 12847.990,
+      "endKp": 12847.990,
+      "inspectionId": "70000000-0000-4000-8000-000000000001",
+      "inspectionCode": "INS-000031",
+      "orderId": "40000000-0000-4000-8000-000000000001",
+      "orderCode": "MO-000123",
+      "foundInTaskId": null,
+      "resolvedInShiftCode": null,
+      "detectedAt": "2026-09-28T00:00:00Z",
+      "repairPlannedDate": "2026-10-10",
+      "resolvedAt": null,
+      "from": "OPEN",
+      "to": "IN_PROGRESS",
+      "comment": "Linked to corrective order MO-000123"
+    }
+  },
+  "messageHash": "7e8064c9532609f3c4c4339048bbebe6ad7931a2311dd640cf4fa7dcf3d7bb30",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000032",
+    "username": "mantenimiento.responsable",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}
