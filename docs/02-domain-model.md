@@ -43,15 +43,20 @@ El vocabulario completo, por fuente, está en [`06-messaging.md`](06-messaging.m
   `app.notification.users.correlation-window`), marca el de Keycloak con `superseded_by`, llegue el
   que llegue primero. Detalle y tabla de equivalencias en [`06-messaging.md`](06-messaging.md).
 - **Fuente parada** (`system.source.stalled`) cuando el lector de Keycloak lleva más de diez
-  intervalos sin una pasada buena, y **entrega muerta** (`system.delivery.dead`) cuando un correo
-  agota sus intentos.
+  intervalos sin una pasada buena, contados desde la última buena o desde que esta instancia empezó a
+  leer la fuente, lo que sea más reciente: el primer arranque (antes de que exista la cuenta de
+  servicio) o un último éxito de antes de un reinicio no la dan por parada al primer fallo. Y
+  **entrega muerta** (`system.delivery.dead`) cuando un correo agota sus intentos.
 
 ## Ráfaga (`activity_burst`)
 
 Una importación de perfiles emite miles de eventos `profile` iguales. Cada uno hace un upsert en
 la ráfaga abierta de su clave (`origen|entidad|operación|actor|correlationId`: contador,
 `last_event_at` y una muestra de hasta 20 ids), y un planificador la cierra cuando lleva 30 s sin
-eventos o 10 min abierta, escribiendo **una** línea con `event_count` y la muestra. El índice único
+eventos, escribiendo **una** línea con `event_count` y la muestra. Una ráfaga sin `correlationId`
+se cierra además a los 10 min de abrirse (`max-window`); la de un trabajo, cuyos eventos llevan su
+`jobId`, no se corta por tiempo, para que una importación de más de diez minutos siga siendo una
+línea, y solo tiene un tope por si no parase nunca (`correlated-max-window`, 4 h). El índice único
 parcial sobre las abiertas es lo que hace que solo un cerrador gane y que el siguiente evento abra
 otra. No se agregan las bajas de vía, estación, perfil, seccionador y aislador ni el alta de un
 paquete de ejecución (`app.notification.burst.direct-*`): esas son una línea cada una.

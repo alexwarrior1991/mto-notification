@@ -174,7 +174,7 @@ y los ejemplos de cada productor, consumidor, inbox, firma y topología de las c
 (controladores sonda), `ApiDocsExposureTest`, `CorrelationIdFilterTest`,
 `OpenApiDocumentationConfigurationTest`; contra PostgreSQL, `InboxMessageRepositoryDataJpaTest`,
 `ActivityRegistryDataJpaTest` (idempotencia, `CHECK`s, rachas, la fusión del evento de Keycloak con
-el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera, frenos, arrendamiento, purga) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
+el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera y la de un trabajo que pasa de los diez minutos sin partirse, frenos, arrendamiento, purga) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
 entregas), los tres `@DataJpaTest` que recogen los servicios package-private con una
 `@TestConfiguration` anidada y `@ComponentScan` por nombre; `MtoNotificationApplicationTests`
 (contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean);

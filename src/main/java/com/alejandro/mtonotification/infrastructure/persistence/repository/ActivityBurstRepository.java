@@ -57,18 +57,24 @@ public interface ActivityBurstRepository extends JpaRepository<ActivityBurst, UU
 
     /**
      * Las abiertas que llevan un rato ociosas o demasiado tiempo abiertas, bloqueadas para este
-     * cerrador: otra instancia que cierre a la vez se salta las que ya tiene alguien.
+     * cerrador: otra instancia que cierre a la vez se salta las que ya tiene alguien. «Demasiado» depende
+     * de si la rafaga es de un trabajo: con {@code correlation_id} (los eventos de una importacion llevan
+     * su jobId) el tope es {@code correlatedOpenedBefore}, para que una importacion larga sea una linea;
+     * sin el, {@code openedBefore}.
      */
     @Query(value = """
             select * from activity_burst
              where status = 'OPEN'
-               and (last_event_at < :idleBefore or opened_at < :openedBefore)
+               and (last_event_at < :idleBefore
+                    or (correlation_id is null and opened_at < :openedBefore)
+                    or (correlation_id is not null and opened_at < :correlatedOpenedBefore))
              order by last_event_at
              limit :limit
              for update skip locked
             """, nativeQuery = true)
     List<ActivityBurst> findExpiredOpenForUpdate(@Param("idleBefore") Instant idleBefore,
                                                  @Param("openedBefore") Instant openedBefore,
+                                                 @Param("correlatedOpenedBefore") Instant correlatedOpenedBefore,
                                                  @Param("limit") int limit);
 
     @Modifying

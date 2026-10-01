@@ -45,6 +45,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -326,6 +327,34 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
 
         burstAggregator.record("mto-configuration", "station", "updated", Actor.system(), null, "s3", Instant.now());
         assertEquals(2, activityBurstRepository.count(), "cerrada la anterior, el siguiente evento abre otra");
+    }
+
+    /**
+     * Una importacion de once minutos es UNA linea: la rafaga de un trabajo (con correlationId) no se
+     * corta a los diez minutos de abrirse, sino cuando deja de recibir eventos, con un tope propio
+     * (cuatro horas) por si no parase nunca. Una sin correlationId si se corta a los diez minutos. Los
+     * ultimos eventos llegan en el futuro para que la inactividad (PT0S en este test) no cierre ninguna.
+     */
+    @Test
+    void aJobBurstOutlivesTheMaxWindowButNotItsOwnCapAndAnUncorrelatedOneDoesNot() {
+        Instant now = Instant.now();
+        Instant stillArriving = now.plusSeconds(60);
+        burstAggregator.record("mto-configuration", "profile", "created", Actor.system(), "job-largo", "p1", now.minus(Duration.ofMinutes(11)));
+        burstAggregator.record("mto-configuration", "profile", "created", Actor.system(), "job-largo", "p2", stillArriving);
+        burstAggregator.record("mto-configuration", "profile", "created", Actor.system(), null, "p3", now.minus(Duration.ofMinutes(11)));
+        burstAggregator.record("mto-configuration", "profile", "created", Actor.system(), null, "p4", stillArriving);
+        burstAggregator.record("mto-configuration", "profile", "created", Actor.system(), "job-sin-fin", "p5", now.minus(Duration.ofHours(5)));
+        burstAggregator.record("mto-configuration", "profile", "created", Actor.system(), "job-sin-fin", "p6", stillArriving);
+
+        assertEquals(2, burstAggregator.closeExpired());
+
+        entityManager.clear();
+        Map<String, ActivityBurstStatus> statusByCorrelation = new HashMap<>();
+        activityBurstRepository.findAll().forEach(burst -> statusByCorrelation.put(String.valueOf(burst.getCorrelationId()), burst.getStatus()));
+        assertEquals(ActivityBurstStatus.OPEN, statusByCorrelation.get("job-largo"), "el trabajo sigue mandando: sigue abierta");
+        assertEquals(ActivityBurstStatus.CLOSED, statusByCorrelation.get("null"), "sin correlationId, diez minutos");
+        assertEquals(ActivityBurstStatus.CLOSED, statusByCorrelation.get("job-sin-fin"), "el tope de las de un trabajo");
+        assertEquals(2, activityEventRepository.count(ActivityEventSpecification.typeEquals("configuration.profile.created")));
     }
 
     /**

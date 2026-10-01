@@ -27,6 +27,8 @@ import java.util.Map;
  * {@link #closeExpired} la abre el planificador: reclama con {@code for update skip locked}, cierra
  * y escribe UNA linea por rafaga, todo en una transaccion. Solo un cerrador gana cada rafaga, y un
  * consumidor que esperaba en la fila bloqueada la encuentra cerrada y abre otra: nada se pierde.
+ * La de un trabajo (con {@code correlationId}) se cierra cuando el trabajo deja de mandar, no a los
+ * diez minutos: una importacion de once es una linea, no dos.
  */
 @Service
 @RequiredArgsConstructor
@@ -58,7 +60,8 @@ class BurstAggregatorImpl implements BurstAggregator {
         NotificationProperties.Burst burst = properties.burst();
         Instant now = Instant.now();
         List<ActivityBurst> expired = activityBurstRepository.findExpiredOpenForUpdate(
-                now.minus(burst.idleTimeout()), now.minus(burst.maxWindow()), CLOSE_LIMIT);
+                now.minus(burst.idleTimeout()), now.minus(burst.maxWindow()), now.minus(burst.correlatedMaxWindow()),
+                CLOSE_LIMIT);
         int closed = 0;
         for (ActivityBurst open : expired) {
             if (activityBurstRepository.close(open.getId()) == 0) {

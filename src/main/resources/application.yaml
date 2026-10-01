@@ -319,9 +319,13 @@ app:
       # menos de esto uno del otro, en cualquier orden de llegada.
       correlation-window: ${APP_NOTIFICATION_USERS_CORRELATION_WINDOW:PT2M}
     burst:
-      # Una rafaga se cierra a los 30 s sin eventos nuevos, o a los 10 minutos de abrirse.
+      # Una rafaga se cierra a los 30 s sin eventos nuevos. La de un trabajo (con correlationId: los
+      # eventos de una importacion de mto-configuration llevan su jobId) no se corta por tiempo, para que
+      # una importacion entera sea una linea aunque dure mas de diez minutos; solo tiene un tope por si
+      # no parase nunca. Una sin correlationId se cierra ademas a los 10 minutos de abrirse.
       idle-timeout: ${APP_NOTIFICATION_BURST_IDLE_TIMEOUT:PT30S}
       max-window: ${APP_NOTIFICATION_BURST_MAX_WINDOW:PT10M}
+      correlated-max-window: ${APP_NOTIFICATION_BURST_CORRELATED_MAX_WINDOW:PT4H}
       sample-size: 20
       close-fixed-delay: ${APP_NOTIFICATION_BURST_CLOSE_DELAY:PT10S}
       close-enabled: ${APP_NOTIFICATION_BURST_CLOSE_ENABLED:true}

@@ -18,8 +18,10 @@ import com.alejandro.mtonotification.domain.model.Subject;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.SourceKind;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -28,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
@@ -52,11 +55,23 @@ class KeycloakEventsPollerImpl implements KeycloakEventsPoller {
     private final ActivityIngestor activityIngestor;
     private final SourceCursorService cursorService;
     private final KeycloakProperties properties;
+    private final Clock clock;
+    /** Cuando empezo ESTA instancia a leer cada fuente: desde ahi se mide una caida que no vio empezar. */
+    private final Map<SourceKind, Instant> readingSince = new ConcurrentHashMap<>();
 
+    @Autowired
     KeycloakEventsPollerImpl(KeycloakEventsClient client, KeycloakLoginEventAdapter loginAdapter,
                              KeycloakAdminEventAdapter adminAdapter, InboxMessageService inboxMessageService,
                              ActivityIngestor activityIngestor, SourceCursorService cursorService,
                              KeycloakProperties properties) {
+        this(client, loginAdapter, adminAdapter, inboxMessageService, activityIngestor, cursorService, properties,
+                Clock.systemUTC());
+    }
+
+    KeycloakEventsPollerImpl(KeycloakEventsClient client, KeycloakLoginEventAdapter loginAdapter,
+                             KeycloakAdminEventAdapter adminAdapter, InboxMessageService inboxMessageService,
+                             ActivityIngestor activityIngestor, SourceCursorService cursorService,
+                             KeycloakProperties properties, Clock clock) {
         this.client = client;
         this.loginAdapter = loginAdapter;
         this.adminAdapter = adminAdapter;
@@ -64,6 +79,7 @@ class KeycloakEventsPollerImpl implements KeycloakEventsPoller {
         this.activityIngestor = activityIngestor;
         this.cursorService = cursorService;
         this.properties = properties;
+        this.clock = clock;
     }
 
     @Override
@@ -80,6 +96,7 @@ class KeycloakEventsPollerImpl implements KeycloakEventsPoller {
 
     @Override
     public PollSummary poll(SourceKind kind) {
+        readingSince.putIfAbsent(kind, clock.instant());
         Optional<SourceCursorService.Lease> lease = cursorService.acquire(kind);
         if (lease.isEmpty()) {
             LOGGER.debug("Source {} is leased by another instance; skipping this poll", kind);
@@ -121,7 +138,7 @@ class KeycloakEventsPollerImpl implements KeycloakEventsPoller {
     private <T> List<Timed<T>> fetch(SourceCursorService.Lease lease, PageFetcher<T> fetcher, Function<T, Long> time) {
         KeycloakProperties.Events events = properties.events();
         Instant since = lease.lastEventTime() == null
-                ? Instant.now().minus(events.initialLookback())
+                ? clock.instant().minus(events.initialLookback())
                 : lease.lastEventTime().minus(events.overlap());
         List<Timed<T>> collected = new ArrayList<>();
         int pageSize = events.pageSize();
@@ -130,7 +147,7 @@ class KeycloakEventsPollerImpl implements KeycloakEventsPoller {
             boolean crossed = false;
             for (T item : items) {
                 Long millis = time.apply(item);
-                Instant at = millis == null ? Instant.now() : Instant.ofEpochMilli(millis);
+                Instant at = millis == null ? clock.instant() : Instant.ofEpochMilli(millis);
                 if (at.isBefore(since)) {
                     crossed = true;
                     break;
@@ -186,24 +203,35 @@ class KeycloakEventsPollerImpl implements KeycloakEventsPoller {
                 truncate(aggregateId, 100), null, null, null, Fingerprints.sha256(payload), payload, null);
     }
 
-    /** Una fuente que lleva demasiado sin leerse bien deja una linea SYSTEM; la regla avisa a explotacion. */
+    /**
+     * Una fuente que lleva demasiado sin leerse bien deja una linea SYSTEM; la regla avisa a explotacion.
+     * «Demasiado» se cuenta desde su ultima pasada buena o desde que esta instancia empezo a leerla, lo
+     * que sea mas reciente: una fuente que nunca ha leido bien (el primer arranque, antes de que exista la
+     * cuenta de servicio) o cuyo ultimo exito es de antes de un reinicio no se da por parada al primer
+     * fallo, sino cuando esta instancia lleva el umbral entero sin conseguirlo.
+     */
     private void recordStallIfLong(SourceKind kind, SourceCursorService.Lease lease, String error) {
         Duration threshold = properties.events().pollInterval().multipliedBy(STALL_MULTIPLIER);
+        Instant now = clock.instant();
         Instant lastSuccess = lease.lastSuccessAt();
-        if (lastSuccess != null && lastSuccess.isAfter(Instant.now().minus(threshold))) {
+        Instant failingSince = readingSince.getOrDefault(kind, now);
+        if (lastSuccess != null && lastSuccess.isAfter(failingSince)) {
+            failingSince = lastSuccess;
+        }
+        if (failingSince.isAfter(now.minus(threshold))) {
             return;
         }
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("source", kind.name());
         payload.put("lastSuccessAt", lastSuccess == null ? "never" : lastSuccess.toString());
         payload.put("error", error);
-        long hourBucket = Instant.now().getEpochSecond() / 3600;
+        long hourBucket = now.getEpochSecond() / 3600;
         try {
             activityIngestor.ingest(ActivityEventDraft.builder()
                     .source(SELF_SOURCE, "stalled:" + kind.name() + ":" + hourBucket)
                     .type(ActivityTypes.SYSTEM_SOURCE_STALLED)
                     .severity(ActivitySeverity.WARNING)
-                    .occurredAt(Instant.now())
+                    .occurredAt(now)
                     .subject(Subject.of("source", kind.name()))
                     .payload(payload)
                     .build());

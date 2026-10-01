@@ -59,8 +59,11 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -575,6 +578,92 @@ class BusinessLayerTest {
             assertNotNull(summaries.get(SourceKind.KEYCLOAK_LOGIN).error());
             verify(cursors).release(eq(lease), eq(null), anyString());
             assertFalse(summaries.get(SourceKind.KEYCLOAK_ADMIN).leased());
+        }
+
+        /**
+         * El primer arranque de un stack: mto-notification pregunta a Keycloak antes de que
+         * apply-partials.sh cree su cuenta de servicio. Una fuente que nunca ha leido bien no se da por
+         * parada al primer fallo, sino cuando esta instancia lleva el umbral entero (diez vueltas de 20 s)
+         * sin conseguirlo; y entonces una vez por hora.
+         */
+        @Test
+        void aSourceThatNeverReadIsStalledOnlyAfterTheWholeThresholdSinceThisInstanceStartedReadingIt() {
+            KeycloakEventsClient failing = mock(KeycloakEventsClient.class);
+            when(failing.loginEvents(anyInt(), anyInt())).thenThrow(new DirectoryUnavailableException("401 invalid_client"));
+            SourceCursorService cursors = mock(SourceCursorService.class);
+            when(cursors.acquire(SourceKind.KEYCLOAK_LOGIN))
+                    .thenReturn(Optional.of(new SourceCursorService.Lease(SourceKind.KEYCLOAK_LOGIN, "me", null, null)));
+            ActivityIngestor ingestor = mock(ActivityIngestor.class);
+            MutableClock clock = new MutableClock(Instant.parse("2026-10-01T08:00:05Z"));
+            KeycloakEventsPollerImpl poller = new KeycloakEventsPollerImpl(failing, loginAdapter, adminAdapter,
+                    mock(InboxMessageService.class), ingestor, cursors, keycloakProperties(), clock);
+
+            poller.poll(SourceKind.KEYCLOAK_LOGIN);
+            clock.advance(Duration.ofSeconds(199));
+            poller.poll(SourceKind.KEYCLOAK_LOGIN);
+            verify(ingestor, never()).ingest(any());
+
+            clock.advance(Duration.ofSeconds(2));
+            poller.poll(SourceKind.KEYCLOAK_LOGIN);
+
+            ActivityEventDraft stall = ingested(ingestor);
+            assertEquals(ActivityTypes.SYSTEM_SOURCE_STALLED, stall.type());
+            assertEquals("never", stall.payload().get("lastSuccessAt"));
+            assertEquals("stalled:KEYCLOAK_LOGIN:" + clock.instant().getEpochSecond() / 3600, stall.sourceEventId(),
+                    "una linea por fuente y hora: las vueltas siguientes de la misma hora son la misma");
+        }
+
+        /** Un reinicio tampoco: el ultimo exito es de antes de parar, y esta instancia acaba de empezar a leer. */
+        @Test
+        void aLastSuccessFromBeforeARestartDoesNotTurnTheFirstFailureIntoAStall() {
+            KeycloakEventsClient failing = mock(KeycloakEventsClient.class);
+            when(failing.adminEvents(anyInt(), anyInt())).thenThrow(new DirectoryUnavailableException("Keycloak is down"));
+            Instant yesterday = Instant.parse("2026-09-30T18:00:00Z");
+            SourceCursorService cursors = mock(SourceCursorService.class);
+            when(cursors.acquire(SourceKind.KEYCLOAK_ADMIN))
+                    .thenReturn(Optional.of(new SourceCursorService.Lease(SourceKind.KEYCLOAK_ADMIN, "me", yesterday, yesterday)));
+            ActivityIngestor ingestor = mock(ActivityIngestor.class);
+            MutableClock clock = new MutableClock(Instant.parse("2026-10-01T08:00:00Z"));
+            KeycloakEventsPollerImpl poller = new KeycloakEventsPollerImpl(failing, loginAdapter, adminAdapter,
+                    mock(InboxMessageService.class), ingestor, cursors, keycloakProperties(), clock);
+
+            poller.poll(SourceKind.KEYCLOAK_ADMIN);
+            verify(ingestor, never()).ingest(any());
+
+            clock.advance(Duration.ofMinutes(4));
+            poller.poll(SourceKind.KEYCLOAK_ADMIN);
+
+            ActivityEventDraft stall = ingested(ingestor);
+            assertEquals(ActivityTypes.SYSTEM_SOURCE_STALLED, stall.type());
+            assertEquals(yesterday.toString(), stall.payload().get("lastSuccessAt"));
+        }
+
+        /** Un reloj que solo avanza cuando el test lo dice. */
+        private static final class MutableClock extends Clock {
+            private Instant now;
+
+            MutableClock(Instant now) {
+                this.now = now;
+            }
+
+            void advance(Duration step) {
+                now = now.plus(step);
+            }
+
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return now;
+            }
         }
 
         private final class FakeEventsClient implements KeycloakEventsClient {
