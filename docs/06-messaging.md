@@ -52,7 +52,10 @@ permanente (`UnprocessableSourceEventException`) lo manda a la DLQ.
 seccionador y aislador y el alta de un paquete de ejecución son una línea cada una
 (`configuration.<entidad>.<operación>`, `WARNING` la baja), y lo demás entra en `activity_burst`
 por `origen|entidad|operación|actor|correlationId`. Con el `correlationId = jobId` de la fase 2b,
-una importación entera es **una** línea con `eventCount`. Las reglas: una ráfaga de 50 o más avisa
+una importación entera es **una** línea con `eventCount`, también la de perfiles, que dura más de
+diez minutos: la ráfaga de un trabajo solo se cierra cuando deja de recibir eventos (30 s), con un
+tope de 4 h (`app.notification.burst.correlated-max-window`), y el corte a los 10 min
+(`max-window`) queda para las que no traen `correlationId`. Las reglas: una ráfaga de 50 o más avisa
 a `mto-maintenance-manager` y `mto-ops`; una baja de infraestructura, además por correo; un
 paquete nuevo, a mantenimiento y almacén.
 
@@ -169,7 +172,10 @@ de la petición. Por eso:
    la marca.
 4. Suelta el arrendamiento avanzando la marca al `time` más nuevo visto (nunca hacia atrás) y, si
    falló, guarda el error sin mover la marca; más de diez intervalos sin una pasada buena registran
-   `system.source.stalled`.
+   `system.source.stalled`, una vez por fuente y hora. Se cuentan desde la última pasada buena o
+   desde que esta instancia empezó a leer la fuente, lo que sea más reciente: al primer arranque de un
+   stack el lector pregunta antes de que `apply-partials.sh` cree `mto-notification-svc`, y eso no es
+   una fuente parada mientras no dure los diez intervalos.
 
 Todo el HTTP corre fuera de transacción, con la cuenta de servicio `mto-notification-svc`
 (`client_credentials`, `view-events`) y el circuito `keycloak`.

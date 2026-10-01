@@ -34,7 +34,7 @@ public record NotificationProperties(
         rules = rules == null ? new Rules(Map.of()) : rules;
         access = access == null ? new Access(null) : access;
         users = users == null ? new Users(null) : users;
-        burst = burst == null ? new Burst(null, null, 0, null, true, null, null) : burst;
+        burst = burst == null ? new Burst(null, null, null, 0, null, true, null, null) : burst;
         inbox = inbox == null ? new Inbox(0, 0) : inbox;
         delivery = delivery == null ? new Delivery(true, null, null, 0, 0, null, null, null, true) : delivery;
         email = email == null ? new Email(true, null, null, null, 0) : email;
@@ -66,19 +66,25 @@ public record NotificationProperties(
     }
 
     /**
-     * @param idleTimeout      sin eventos nuevos durante esto, la rafaga se cierra
-     * @param maxWindow        abierta mas de esto, se cierra aunque sigan llegando
-     * @param sampleSize       ids que se guardan de muestra
-     * @param closeFixedDelay  cada cuanto mira el cerrador
-     * @param closeEnabled     el cerrador; los tests lo apagan y lo llaman a mano
-     * @param directDeletions  entidades cuya baja no se agrega
-     * @param directCreations  entidades cuya alta no se agrega
+     * @param idleTimeout          sin eventos nuevos durante esto, la rafaga se cierra
+     * @param maxWindow            una rafaga sin {@code correlationId}, abierta mas de esto, se cierra
+     *                             aunque sigan llegando
+     * @param correlatedMaxWindow  lo mismo para una con {@code correlationId}, que es la de un trabajo
+     *                             (una importacion entera): se cierra al dejar de llegar eventos, y esto
+     *                             es solo el tope por si un trabajo no para nunca
+     * @param sampleSize           ids que se guardan de muestra
+     * @param closeFixedDelay      cada cuanto mira el cerrador
+     * @param closeEnabled         el cerrador; los tests lo apagan y lo llaman a mano
+     * @param directDeletions      entidades cuya baja no se agrega
+     * @param directCreations      entidades cuya alta no se agrega
      */
-    public record Burst(Duration idleTimeout, Duration maxWindow, @Min(0) int sampleSize, Duration closeFixedDelay,
-                        boolean closeEnabled, Set<String> directDeletions, Set<String> directCreations) {
+    public record Burst(Duration idleTimeout, Duration maxWindow, Duration correlatedMaxWindow, @Min(0) int sampleSize,
+                        Duration closeFixedDelay, boolean closeEnabled, Set<String> directDeletions,
+                        Set<String> directCreations) {
         public Burst {
             idleTimeout = idleTimeout == null ? Duration.ofSeconds(30) : idleTimeout;
             maxWindow = maxWindow == null ? Duration.ofMinutes(10) : maxWindow;
+            correlatedMaxWindow = correlatedMaxWindow == null ? Duration.ofHours(4) : correlatedMaxWindow;
             sampleSize = sampleSize <= 0 ? 20 : sampleSize;
             closeFixedDelay = closeFixedDelay == null ? Duration.ofSeconds(10) : closeFixedDelay;
             // Sin valor (ni en el YAML ni en un test que construye el record a mano): lo que documenta
