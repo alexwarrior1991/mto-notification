@@ -91,11 +91,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.security.principal-claim=preferred_username",
         "app.security.audience-validation-enabled=false",
         "app.security.expose-api-docs=false",
-        "app.security.cors.allowed-origins=http://localhost:4200",
-        "app.security.cors.allowed-methods=GET,POST,PUT,PATCH,DELETE",
-        "app.security.cors.allowed-headers=Authorization,Content-Type",
-        "app.security.cors.allow-credentials=false",
-        "app.security.cors.max-age=3600",
         "spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:8082/realms/mto"
 })
 class RestControllerLayerTest {

@@ -143,16 +143,10 @@ class SecurityLayerTest {
      */
     @Test
     void securityPropertiesRefuseAudienceValidationWithoutAnAudience() {
-        assertTrue(validator.validate(properties(true, CLIENT_ID, List.of("http://localhost:4200"))).isEmpty());
-        assertTrue(validator.validate(properties(true, " ", List.of("http://localhost:4200"))).stream()
+        assertTrue(validator.validate(properties(true, CLIENT_ID)).isEmpty());
+        assertTrue(validator.validate(properties(true, " ")).stream()
                 .anyMatch(violation -> violation.getMessage().contains("required-audience")));
-        assertTrue(validator.validate(properties(false, null, List.of("http://localhost:4200"))).isEmpty());
-    }
-
-    @Test
-    void securityPropertiesRejectAWildcardCorsOrigin() {
-        assertTrue(validator.validate(properties(false, null, List.of("*"))).stream()
-                .anyMatch(violation -> violation.getMessage().contains("allowed-origins")));
+        assertTrue(validator.validate(properties(false, null)).isEmpty());
     }
 
     /**
@@ -187,19 +181,18 @@ class SecurityLayerTest {
         assertTrue(currentUserService.getAudienceKeys().isEmpty());
     }
 
-    private static SecurityProperties properties(boolean audienceValidationEnabled, String requiredAudience, List<String> allowedOrigins) {
+    private static SecurityProperties properties(boolean audienceValidationEnabled, String requiredAudience) {
         return new SecurityProperties(
                 CLIENT_ID,
                 JwtClaimNames.PREFERRED_USERNAME,
                 audienceValidationEnabled,
                 requiredAudience,
-                false,
-                new SecurityProperties.Cors(allowedOrigins, List.of("GET"), List.of("Authorization"), List.of(), false, 3600)
+                false
         );
     }
 
     private static AbstractAuthenticationToken convert(Jwt jwt) {
-        return new KeycloakJwtAuthenticationConverter(properties(false, null, List.of("http://localhost:4200"))).convert(jwt);
+        return new KeycloakJwtAuthenticationConverter(properties(false, null)).convert(jwt);
     }
 
     private static Set<String> authorities(AbstractAuthenticationToken authentication) {
