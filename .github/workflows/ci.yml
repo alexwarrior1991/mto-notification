@@ -149,7 +149,6 @@ jobs:
             -e SPRING_RABBITMQ_HOST=localhost \
             -e SPRING_RABBITMQ_USERNAME=smoke \
             -e SPRING_RABBITMQ_PASSWORD=smoke \
-            -e APP_CORS_ALLOWED_ORIGIN=http://localhost:4200 \
             "$IMAGE"
           for i in $(seq 1 45); do
             if curl -fsS http://localhost:8080/actuator/health > /dev/null; then

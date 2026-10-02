@@ -1,13 +1,9 @@
 package com.alejandro.mtonotification.configuration.security;
 
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
-
-import java.util.List;
 
 /**
  * No existe un interruptor para apagar la seguridad: lo que cambia entre entornos son estas
@@ -23,8 +19,7 @@ public record SecurityProperties(
         @NotBlank String principalClaim,
         boolean audienceValidationEnabled,
         String requiredAudience,
-        boolean exposeApiDocs,
-        @Valid Cors cors
+        boolean exposeApiDocs
 ) {
 
     /**
@@ -36,28 +31,5 @@ public record SecurityProperties(
             + "app.security.audience-validation-enabled es true")
     public boolean isAudienceConfigurationConsistent() {
         return !audienceValidationEnabled || (requiredAudience != null && !requiredAudience.isBlank());
-    }
-
-    /**
-     * La API es stateless y se autentica con la cabecera {@code Authorization}, así que no hay
-     * cookies que enviar y {@code allowCredentials} solo ampliaría la superficie. Con credenciales
-     * activas, además, Spring rechaza el comodín en tiempo de ejecución, de modo que un
-     * {@code allowed-origins: "*"} puesto para salir del paso rompe cada preflight en vez de
-     * aflojar la política.
-     */
-    public record Cors(
-            @NotEmpty List<String> allowedOrigins,
-            @NotEmpty List<String> allowedMethods,
-            @NotEmpty List<String> allowedHeaders,
-            List<String> exposedHeaders,
-            boolean allowCredentials,
-            long maxAge
-    ) {
-
-        @AssertTrue(message = "app.security.cors.allowed-origins no admite el comodín '*': "
-                + "enumérense los orígenes reales de cada entorno")
-        public boolean isOriginListExplicit() {
-            return allowedOrigins == null || !allowedOrigins.contains("*");
-        }
     }
 }

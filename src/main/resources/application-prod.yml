@@ -70,9 +70,6 @@ app:
     required-audience: ${KEYCLOAK_AUDIENCE}
     # La documentacion describe la superficie completa de la API: en produccion queda cerrada.
     expose-api-docs: ${APP_SECURITY_EXPOSE_API_DOCS:false}
-    cors:
-      allowed-origins:
-        - ${APP_CORS_ALLOWED_ORIGIN}
 
   rabbitmq:
     enabled: ${APP_RABBITMQ_ENABLED:true}

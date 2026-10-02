@@ -30,11 +30,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.security.principal-claim=preferred_username",
         "app.security.audience-validation-enabled=false",
         "app.security.expose-api-docs=true",
-        "app.security.cors.allowed-origins=http://localhost:4200",
-        "app.security.cors.allowed-methods=GET",
-        "app.security.cors.allowed-headers=Authorization",
-        "app.security.cors.allow-credentials=false",
-        "app.security.cors.max-age=3600",
         "spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:8082/realms/mto"
 })
 class ApiDocsExposureTest {

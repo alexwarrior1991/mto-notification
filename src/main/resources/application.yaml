@@ -174,25 +174,7 @@ app:
     # desplegado nuevo no exponga el catalogo completo de endpoints por olvido: los perfiles de
     # desarrollo lo abren explicitamente.
     expose-api-docs: ${APP_SECURITY_EXPOSE_API_DOCS:false}
-    cors:
-      allowed-origins:
-        - ${APP_CORS_ALLOWED_ORIGIN:http://localhost:4200}
-      allowed-methods:
-        - GET
-        - POST
-        - PUT
-        - PATCH
-        - DELETE
-        - OPTIONS
-      allowed-headers:
-        - Authorization
-        - Content-Type
-        - X-Correlation-Id
-      exposed-headers:
-        - Location
-        - X-Correlation-Id
-      allow-credentials: false
-      max-age: ${APP_CORS_MAX_AGE:3600}
+    # Sin CORS: lo resuelve mto-gateway, que quita Origin antes de llamar a este servicio.
 
   # Un identificador por peticion: el que trae el gateway en X-Correlation-Id, o uno nuevo. Sale en
   # cada linea de log, en el cuerpo de cada error y en el registro de actividad.

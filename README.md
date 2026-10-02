@@ -65,7 +65,6 @@ tienen:
 | `KEYCLOAK_SERVICE_CLIENT_SECRET` | Secreto de la cuenta de servicio `mto-notification-svc`, con la que se leen los eventos de Keycloak y las direcciones de una audiencia |
 | `SPRING_MAIL_HOST`, `SPRING_MAIL_PORT` | El SMTP (Mailpit en local: `1025`, bandeja web en `8025`) |
 | `APP_NOTIFICATION_LINK_BASE_URL` | Raíz absoluta de los enlaces del correo: el backoffice |
-| `APP_CORS_ALLOWED_ORIGIN` | Origen de navegador permitido por CORS |
 
 Interruptores: `APP_RABBITMQ_ENABLED=false` arranca sin broker, `APP_KEYCLOAK_EVENTS_ENABLED=false`
 no sondea Keycloak (y arranca sin secreto), `APP_NOTIFICATION_EMAIL_ENABLED=false` deja los avisos
@@ -155,6 +154,10 @@ Ver [`keycloak/README.md`](keycloak/README.md).
 | `GET /access/**` | `notification-access-read` |
 | `/admin/**` | `notification-admin` |
 | `/actuator/**` (salvo health/info) | `ops-metrics` / `ops-write` |
+
+Sin CORS propio: todo navegador llega por `mto-gateway`, que resuelve el CORS y quita `Origin` antes
+de llamar a este servicio. Aquí no hay `.cors()` ni `OPTIONS` abierto, así que un *preflight* que
+llegara directamente pide token como cualquier otra petición (`ApiAuthorizationRulesTest`).
 
 ```bash
 TOKEN=$(curl -s -X POST http://auth.mto.local:8082/realms/mto/protocol/openid-connect/token \

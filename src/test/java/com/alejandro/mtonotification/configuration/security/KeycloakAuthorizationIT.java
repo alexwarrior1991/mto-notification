@@ -106,11 +106,6 @@ class KeycloakAuthorizationIT {
         registry.add("app.security.audience-validation-enabled", () -> "true");
         registry.add("app.security.required-audience", () -> API_CLIENT_ID);
         registry.add("app.security.expose-api-docs", () -> "false");
-        registry.add("app.security.cors.allowed-origins", () -> "http://localhost:4200");
-        registry.add("app.security.cors.allowed-methods", () -> "GET,POST,DELETE");
-        registry.add("app.security.cors.allowed-headers", () -> "Authorization,Content-Type");
-        registry.add("app.security.cors.allow-credentials", () -> "false");
-        registry.add("app.security.cors.max-age", () -> "3600");
     }
 
     @Autowired
