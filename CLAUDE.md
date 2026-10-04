@@ -165,7 +165,8 @@ YAML real carga; una regla rota impide arrancar), `BusinessLayerTest` (motor, in
 rachas, datos maestros, los trabajos de configuración, las acciones de `mto-users` y los eventos de
 `mto-maintenance` y de `mto-stock` con los ejemplos de `src/test/resources/contracts`, las reglas de
 mantenimiento y de almacén enviadas pasando por el motor real, el correlador, adaptadores y lector
-de Keycloak, despachador y resolutor; con dobles), `MessagingLayerTest` (el JSON literal de `mto-configuration`
+de Keycloak, despachador y resolutor, y el filtro de IP de los accesos, que nunca consulta el DNS;
+con dobles), `MessagingLayerTest` (el JSON literal de `mto-configuration`
 y los ejemplos de cada productor, consumidor, inbox, firma y topología de las cinco fuentes con
 `ApplicationContextRunner`), `KeycloakEventsClientTest` (`MockRestServiceServer`),
 `MailLayerTest` (GreenMail), `MapperLayerTest`, `DtoValidationTest`, `JpaEntityModelTest`,
@@ -184,5 +185,7 @@ con la cuenta de servicio, copiado en el contenedor como `mto-realm.json` porque
 saca el nombre del realm del nombre del fichero y, con otro, la cuenta de servicio muere con
 «Session not bound to a realm»; el segundo activa los eventos del realm por la Admin API al
 arrancar, como `apply-partials.sh`, hace un acceso, tres fallos y un cambio desde la consola y
-comprueba el registro, la racha, los avisos y que la segunda pasada no repite nada). `support/PostgreSQLTestContainer` levanta `postgres:17-alpine` o usa
+comprueba el registro, la racha, los avisos y que la segunda pasada no repite nada). `support/RecordingInetAddressResolverProvider` (registrado en
+`META-INF/services`) apunta cada nombre que resuelve la JVM de los tests y delega en el de la JDK.
+`support/PostgreSQLTestContainer` levanta `postgres:17-alpine` o usa
 `TEST_DATABASE_URL/USERNAME/PASSWORD`; sin ninguna de las dos cosas la clase se omite, no falla.

@@ -23,7 +23,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -90,7 +89,12 @@ class ActivityQueryServiceImpl implements ActivityQueryService {
         return PageMapper.toPageResponse(repository.findAll(spec, sanitized), mapper::toAccess);
     }
 
-    /** Solo literales: un nombre de host haria una consulta DNS desde un parametro de la API. */
+    /**
+     * Solo literales: un nombre de host haria una consulta DNS desde un parametro de la API. La
+     * expresion acota la longitud y los caracteres, pero deja pasar nombres hechos de letras
+     * hexadecimales y puntos ({@code dead.beef}) o un cuarteto fuera de rango ({@code 999.1.1.1}), que
+     * {@code InetAddress.getByName} resolvia como nombres. {@code InetAddress.ofLiteral} nunca resuelve.
+     */
     static InetAddress parseIp(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -100,8 +104,8 @@ class ActivityQueryServiceImpl implements ActivityQueryService {
             throw new ValidationException("ipAddress must be an IPv4 or IPv6 literal");
         }
         try {
-            return InetAddress.getByName(literal);
-        } catch (UnknownHostException invalid) {
+            return InetAddress.ofLiteral(literal);
+        } catch (IllegalArgumentException invalid) {
             throw new ValidationException("ipAddress must be an IPv4 or IPv6 literal");
         }
     }

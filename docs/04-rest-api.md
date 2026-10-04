@@ -32,7 +32,7 @@ backoffice), `subjectType`, `subjectId`, `activityEventId`, `createdAt`, `read`,
 |---|---|
 | `GET /activity?category=&type=&actorUsername=&subjectType=&subjectId=&severity=&sourceService=&from=&to=&includeSuperseded=` | `PageResponse<ActivityEventResponse>` sin `payload`; `category=ACCESS` es 400 `VAL-001`. `sort` admite `occurredAt`, `recordedAt`, `severity`, `type`, `seq` |
 | `GET /activity/{id}` | El evento con su `payload`; 404 `ACT-404` si no existe o es un acceso |
-| `GET /access?username=&ipAddress=&type=&outcome=&from=&to=` | `PageResponse<AccessEventResponse>` con `username`, `userId`, `ipAddress` y `outcome` (`SUCCESS`/`FAILURE`: fallos, rachas, bloqueos). `ipAddress` es un literal IPv4 o IPv6 |
+| `GET /access?username=&ipAddress=&type=&outcome=&from=&to=` | `PageResponse<AccessEventResponse>` con `username`, `userId`, `ipAddress` y `outcome` (`SUCCESS`/`FAILURE`: fallos, rachas, bloqueos). `ipAddress` es un literal IPv4 o IPv6, que se lee sin consultar el DNS (`InetAddress.ofLiteral`): un nombre, también uno de letras hexadecimales como `dead.beef`, o un cuarteto fuera de rango es 400 `VAL-001` |
 
 `ActivityEventResponse`: `id`, `seq`, `sourceService`, `sourceEventId`, `category`, `type`,
 `severity`, `occurredAt`, `recordedAt`, `actor{kind, username, id}`, `subject{type, id, label}`,

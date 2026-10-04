@@ -13,6 +13,7 @@ import com.alejandro.mtonotification.application.dto.messaging.SourceEnvelope;
 import com.alejandro.mtonotification.application.dto.messaging.SourceEventContext;
 import com.alejandro.mtonotification.application.exception.DirectoryUnavailableException;
 import com.alejandro.mtonotification.application.exception.UnprocessableSourceEventException;
+import com.alejandro.mtonotification.application.exception.ValidationException;
 import com.alejandro.mtonotification.application.service.ActivityIngestor;
 import com.alejandro.mtonotification.application.service.AudienceResolver;
 import com.alejandro.mtonotification.application.service.BurstAggregator;
@@ -48,6 +49,7 @@ import com.alejandro.mtonotification.infrastructure.persistence.entity.DeliveryS
 import com.alejandro.mtonotification.infrastructure.persistence.entity.Notification;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.SourceKind;
 import com.alejandro.mtonotification.infrastructure.persistence.repository.ActivityEventRepository;
+import com.alejandro.mtonotification.support.RecordingInetAddressResolverProvider;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -1425,6 +1427,34 @@ class BusinessLayerTest {
             correlator.afterIngested(event(ActivityTypes.ACCESS_LOGIN, ActivityCategory.ACCESS, ActivitySeverity.INFO, "alice", null), anyDraft);
 
             verifyNoInteractions(repository);
+        }
+    }
+
+    /** El filtro de IP de {@code GET /access}: un literal, y nunca una consulta al DNS. */
+    @Nested
+    class AccessQueries {
+
+        @Test
+        void anIpFilterIsAnIpv4OrIpv6Literal() {
+            assertEquals(InetAddress.ofLiteral("10.0.0.7"), ActivityQueryServiceImpl.parseIp(" 10.0.0.7 "));
+            assertEquals(InetAddress.ofLiteral("::1"), ActivityQueryServiceImpl.parseIp("::1"));
+            assertEquals(InetAddress.ofLiteral("10.0.0.7"), ActivityQueryServiceImpl.parseIp("::ffff:10.0.0.7"), "una IPv4 mapeada es esa IPv4");
+            assertNull(ActivityQueryServiceImpl.parseIp(null));
+            assertNull(ActivityQueryServiceImpl.parseIp("  "));
+        }
+
+        /**
+         * Lo que la expresion deja pasar sin ser un literal (letras hexadecimales y puntos, un cuarteto
+         * fuera de rango) es un 400 sin pasar por el DNS: getByName lo resolvia como un nombre.
+         */
+        @Test
+        void anIpFilterThatIsNotALiteralIsRejectedWithoutAskingTheDns() {
+            for (String notALiteral : List.of("dead.beef", "bad.cab", "999.1.1.1", "mto-gateway")) {
+                ValidationException rejected = assertThrows(ValidationException.class, () -> ActivityQueryServiceImpl.parseIp(notALiteral),
+                        notALiteral);
+                assertEquals("ipAddress must be an IPv4 or IPv6 literal", rejected.getMessage());
+                assertFalse(RecordingInetAddressResolverProvider.lookedUp(notALiteral), notALiteral + " no se resuelve");
+            }
         }
     }
 }
