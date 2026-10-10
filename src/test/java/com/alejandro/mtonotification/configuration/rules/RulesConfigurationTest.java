@@ -60,7 +60,8 @@ class RulesConfigurationTest {
                 "maintenance-inspection-corrective-order", "maintenance-shift", "maintenance-material-no-stock",
                 "maintenance-material-rejected", "maintenance-material-stock-unavailable", "maintenance-asset-disabled",
                 "maintenance-preventive-due-soon", "stock-material-below-minimum", "stock-reservation-touched-by-someone-else",
-                "stock-large-negative-adjustment")));
+                "stock-large-negative-adjustment", "field-possession-opened", "field-possession-closed", "field-evacuation-issued",
+                "field-evacuation-refused", "field-evacuation-complete", "field-evacuation-unacknowledged", "field-all-clear")));
 
         NotificationRule job = repository.rules().stream().filter(rule -> rule.key().equals("configuration-job-finished")).findFirst().orElseThrow();
         assertEquals(List.of("USER:#{payload.createdBy}"), job.audiences(), "el trabajo avisa a quien lo lanzo");
@@ -87,6 +88,18 @@ class RulesConfigurationTest {
         assertTrue(touched.matcher().matches(ActivityTypes.STOCK_RESERVATION_RELEASED));
         assertEquals(100, repository.variables().get("large-adjustment-threshold"));
         assertEquals("service-account-mto-maintenance-svc", repository.variables().get("maintenance-service-account"));
+
+        NotificationRule evacuation = repository.rules().stream().filter(rule -> rule.key().equals("field-evacuation-issued")).findFirst().orElseThrow();
+        assertEquals(List.of("inbox", "email"), evacuation.channels(), "un desalojo de la via llega al correo");
+        assertTrue(evacuation.matcher().matches(ActivityTypes.FIELD_POSSESSION_EVACUATION_ISSUED));
+        assertTrue(evacuation.audiences().contains("PROFILE:mto-field-supervisor"), "el responsable de campo, que tiene bandeja desde la fase 5 de mto-field");
+        assertTrue(evacuation.audiences().contains("PROFILE:mto-maintenance-manager"));
+        NotificationRule refused = repository.rules().stream().filter(rule -> rule.key().equals("field-evacuation-refused")).findFirst().orElseThrow();
+        assertTrue(refused.matcher().matches(ActivityTypes.FIELD_POSSESSION_EVACUATION_ACKNOWLEDGED), "el acuse que dice que no es un acuse");
+        assertEquals(List.of("inbox", "email"), refused.channels());
+        NotificationRule allClear = repository.rules().stream().filter(rule -> rule.key().equals("field-all-clear")).findFirst().orElseThrow();
+        assertTrue(allClear.matcher().matches(ActivityTypes.FIELD_POSSESSION_CLEAR_OF_TRACK));
+        assertEquals(List.of("inbox"), allClear.channels(), "la via libre es una buena noticia: solo la bandeja");
 
         NotificationRule streak = repository.rules().stream().filter(rule -> rule.key().equals("access-login-streak")).findFirst().orElseThrow();
         assertTrue(streak.matcher().matches(ActivityTypes.ACCESS_LOGIN_STREAK));

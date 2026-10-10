@@ -66,7 +66,10 @@ recurso, y ninguno implica a otro.
 Los perfiles de los demás servicios llevan también permisos de aquí, en su propia parcial: todos
 `notification-inbox` (la campana es de todo el mundo), los de responsable, auditor y ops
 `notification-activity-read`, `mto-auditor` y `mto-users-admin` `notification-access-read`, y
-`mto-ops` `notification-admin` (`mto-platform/keycloak/mto-ops-cross-service.json`).
+`mto-ops` `notification-admin` (`mto-platform/keycloak/mto-ops-cross-service.json`). El responsable de campo (`mto-field-supervisor`, en la parcial de `mto-field`) lleva
+`notification-inbox` y `notification-activity-read` desde la fase 5 de ese servicio, que es cuando
+hay algo que recibir; el técnico de campo no lleva nada de aquí: un dispositivo solo habla con
+`mto-field`.
 
 ### La cuenta de servicio
 

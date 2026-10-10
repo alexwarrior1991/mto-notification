@@ -1463,6 +1463,125 @@ class BusinessLayerTest {
                     () -> adapter.handle(fieldEnvelope(null, "x", "opened", Map.of()), context));
         }
 
+        @Test
+        void theShippedFieldRulesTellTheSupervisorsWhatTheyShould() {
+            List<NotificationFactory.NotificationDraft> created = new ArrayList<>();
+            NotificationFactory factory = draft -> {
+                created.add(draft);
+                return Notification.builder().build();
+            };
+            ThrottleGate throttle = mock(ThrottleGate.class);
+            when(throttle.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+            RuleEngineImpl engine = new RuleEngineImpl(new YamlRuleRepository(new ClassPathResource("notification-rules.yml"), Map.of()),
+                    new RuleExpressionEvaluator(), throttle, factory);
+
+            ActivityEventDraft opened = draftOf(fixture("contracts/mto-field/possession-opened.json"));
+            engine.evaluate(lineOf(opened), opened.payload());
+            assertEquals(List.of("field-possession-opened"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+            NotificationFactory.NotificationDraft openedNotice = created.getFirst();
+            assertEquals(List.of(Audience.profile("mto-field-supervisor"), Audience.profile("mto-maintenance-manager")), openedNotice.audiences());
+            assertEquals(List.of("inbox"), openedNotice.channels());
+            assertEquals(ActivitySeverity.INFO, openedNotice.severity());
+            assertEquals("Posesion PO-000012 abierta", openedNotice.title());
+            assertTrue(openedNotice.body().startsWith("campo.responsable ha abierto la posesion PO-000012 del 2026-10-09 con 2 turno(s) (equipos EQ-NORTE,EQ-SUR)"), openedNotice.body());
+            assertEquals("/mantenimiento/turnos", openedNotice.link());
+
+            created.clear();
+            ActivityEventDraft issued = draftOf(fixture("contracts/mto-field/possession-evacuation-issued.json"));
+            engine.evaluate(lineOf(issued), issued.payload());
+            assertEquals(List.of("field-evacuation-issued"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+            NotificationFactory.NotificationDraft evacuation = created.getFirst();
+            assertEquals(List.of("inbox", "email"), evacuation.channels(), "un desalojo llega al correo");
+            assertEquals(ActivitySeverity.CRITICAL, evacuation.severity());
+            assertEquals("Desalojo de la via ordenado en la posesion PO-000012", evacuation.title());
+            assertTrue(evacuation.body().contains("(orden 3) a los equipos EQ-NORTE,EQ-SUR: Tren de trabajos en aproximacion"), evacuation.body());
+
+            created.clear();
+            ActivityEventDraft acknowledged = draftOf(fixture("contracts/mto-field/possession-evacuation-acknowledged.json"));
+            engine.evaluate(lineOf(acknowledged), acknowledged.payload());
+            assertTrue(created.isEmpty(), "un acuse que dice que si, con otro equipo pendiente: el tablero de mto-field ya lo ensena");
+
+            created.clear();
+            ActivityEventDraft refused = draftOf(fieldEnvelope("possession", "70000000-0000-4000-8000-000000000001", "evacuation-acknowledged",
+                    Map.of("code", "PO-000012", "shiftId", "90000000-0000-4000-8000-000000000002", "teamCode", "EQ-SUR", "deviceId", "tab-sur-01",
+                            "accepted", false, "reason", "Tren en el canton", "allAcknowledged", false)));
+            engine.evaluate(lineOf(refused), refused.payload());
+            assertEquals(List.of("field-evacuation-refused"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+            NotificationFactory.NotificationDraft refusal = created.getFirst();
+            assertEquals(ActivitySeverity.CRITICAL, refusal.severity());
+            assertEquals(List.of("inbox", "email"), refusal.channels());
+            assertEquals("El equipo EQ-SUR no puede desalojar la via (posesion PO-000012)", refusal.title());
+            assertTrue(refusal.body().startsWith("campo.tecnico2 (tab-sur-01) ha contestado que el equipo EQ-SUR no puede desalojar la via en la posesion PO-000012: Tren en el canton"), refusal.body());
+            assertEquals("/mantenimiento/turnos/90000000-0000-4000-8000-000000000002", refusal.link(), "el turno del equipo en mto-maintenance");
+
+            created.clear();
+            ActivityEventDraft last = draftOf(fieldEnvelope("possession", "70000000-0000-4000-8000-000000000001", "evacuation-acknowledged",
+                    Map.of("code", "PO-000012", "shiftId", "90000000-0000-4000-8000-000000000002", "teamCode", "EQ-SUR", "deviceId", "tab-sur-01",
+                            "accepted", true, "allAcknowledged", true)));
+            engine.evaluate(lineOf(last), last.payload());
+            assertEquals(List.of("field-evacuation-complete"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+            assertEquals(List.of(Audience.profile("mto-field-supervisor")), created.getFirst().audiences());
+            assertEquals("Desalojo acusado por todos los equipos de la posesion PO-000012", created.getFirst().title());
+            assertTrue(created.getFirst().body().startsWith("Con el acuse de EQ-SUR (campo.tecnico2)"), created.getFirst().body());
+
+            created.clear();
+            ActivityEventDraft overdue = draftOf(fixture("contracts/mto-field/possession-evacuation-unacknowledged.json"));
+            engine.evaluate(lineOf(overdue), overdue.payload());
+            assertEquals(List.of("field-evacuation-unacknowledged"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+            NotificationFactory.NotificationDraft unacknowledged = created.getFirst();
+            assertEquals(List.of("inbox", "email"), unacknowledged.channels());
+            assertEquals(ActivitySeverity.CRITICAL, unacknowledged.severity());
+            assertEquals("Equipos sin acusar el desalojo en la posesion PO-000012: EQ-SUR", unacknowledged.title());
+            assertTrue(unacknowledged.body().startsWith("150 segundos despues de la orden de desalojo de campo.responsable (2026-10-09T23:40:00Z)"), unacknowledged.body());
+
+            created.clear();
+            ActivityEventDraft clear = draftOf(fixture("contracts/mto-field/possession-clear-of-track.json"));
+            engine.evaluate(lineOf(clear), clear.payload());
+            assertTrue(created.isEmpty(), "una salida de via con otro equipo aun dentro no avisa");
+
+            created.clear();
+            ActivityEventDraft allClear = draftOf(fieldEnvelope("possession", "70000000-0000-4000-8000-000000000001", "clear-of-track",
+                    Map.of("code", "PO-000012", "shiftId", "90000000-0000-4000-8000-000000000002", "teamCode", "EQ-SUR", "deviceId", "tab-sur-01",
+                            "earthingRemoved", true, "allClear", true)));
+            engine.evaluate(lineOf(allClear), allClear.payload());
+            assertEquals(List.of("field-all-clear"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+            assertEquals("Via libre en la posesion PO-000012", created.getFirst().title());
+            assertTrue(created.getFirst().body().endsWith("estan fuera de la via, con sus puestas a tierra retiradas."), created.getFirst().body());
+
+            created.clear();
+            ActivityEventDraft forced = draftOf(fixture("contracts/mto-field/possession-closed.json"));
+            engine.evaluate(lineOf(forced), forced.payload());
+            assertEquals(List.of("field-possession-closed"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+            NotificationFactory.NotificationDraft forcedClose = created.getFirst();
+            assertEquals(ActivitySeverity.WARNING, forcedClose.severity(), "sin gravedad en la regla, la del hecho: cerrada a la fuerza");
+            assertEquals("Posesion PO-000012 cerrada a la fuerza", forcedClose.title());
+            assertTrue(forcedClose.body().contains("a la fuerza, con equipos aun en la via: EQ-SUR. Motivo: Fin de la ventana"), forcedClose.body());
+
+            created.clear();
+            ActivityEventDraft closed = draftOf(fieldEnvelope("possession", "70000000-0000-4000-8000-000000000001", "closed",
+                    Map.of("code", "PO-000012", "shiftDate", "2026-10-09", "forced", false, "allClear", true)));
+            engine.evaluate(lineOf(closed), closed.payload());
+            assertEquals(List.of("field-possession-closed"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
+            assertEquals("Posesion PO-000012 cerrada", created.getFirst().title());
+            assertEquals(ActivitySeverity.INFO, created.getFirst().severity());
+            assertTrue(created.getFirst().body().endsWith("con todos los equipos fuera de la via."), created.getFirst().body());
+        }
+
+        private ActivityEventDraft draftOf(SourceEnvelope envelope) {
+            ActivityIngestor recorder = mock(ActivityIngestor.class);
+            when(recorder.ingest(any())).thenReturn(Optional.empty());
+            new FieldSourceAdapter(recorder).handle(envelope, context);
+            return ingested(recorder);
+        }
+
+        private ActivityEvent lineOf(ActivityEventDraft draft) {
+            ActivityEvent event = line(draft.sourceService(), draft.type(), draft.actor(), draft.subject().type(), draft.subject().id(), draft.occurredAt());
+            event.setSeverity(draft.severity());
+            event.setSubjectLabel(draft.subject().label());
+            event.setCorrelationId(draft.correlationId());
+            return event;
+        }
+
         private SourceEnvelope fieldEnvelope(String entityName, String entityId, String eventName, Map<String, Object> values) {
             Map<String, Object> data = new java.util.LinkedHashMap<>();
             if (entityName != null) {

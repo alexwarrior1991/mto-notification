@@ -376,6 +376,74 @@ rules:
     body: "#{event.actorUsername ?: 'Un proceso'} ha registrado un ajuste negativo de #{payload.quantity} #{payload.unit} de #{payload.materialCode}#{payload.materialName != null ? ' (' + payload.materialName + ')' : ''} en #{payload.warehouseCode}#{payload.externalReference != null ? ' (' + payload.externalReference + ')' : ''}#{payload.notes != null ? ': ' + payload.notes : ''}"
     link: "/almacen/movimientos"
 
+  # --- Campo (mto-field) ----------------------------------------------------------------------------
+  # Lo que mto-field cuenta desde su outbox de una posesion de via nocturna: el responsable que la
+  # abre, la cierra y ordena el desalojo; el tecnico del dispositivo que acusa o sale de la via; el
+  # codigo de la posesion como correlacion. Un acuse que dice que si con otros equipos pendientes y
+  # una salida de via que no es la ultima se registran sin aviso: el tablero en directo es de mto-field.
+
+  - key: field-possession-opened
+    event: field.possession.opened
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "Posesion #{payload.code} abierta"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha abierto la posesion #{payload.code} del #{payload.shiftDate} con #{payload.shiftCount} turno(s) (equipos #{payload.teamCodes}), hasta #{payload.endsAt}."
+    link: "/mantenimiento/turnos"
+
+  - key: field-possession-closed
+    event: field.possession.closed
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "Posesion #{payload.code} #{payload.forced == true ? 'cerrada a la fuerza' : 'cerrada'}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha cerrado la posesion #{payload.code} del #{payload.shiftDate}#{payload.forced == true ? ' a la fuerza, con equipos aun en la via: ' + payload.pendingTeams : ', con todos los equipos fuera de la via'}#{payload.closeReason != null ? '. Motivo: ' + payload.closeReason : ''}."
+    link: "/mantenimiento/turnos"
+
+  - key: field-evacuation-issued
+    event: field.possession.evacuation-issued
+    severity: CRITICAL
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    channels: [inbox, email]
+    title: "Desalojo de la via ordenado en la posesion #{payload.code}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha ordenado el desalojo de la via en la posesion #{payload.code} (orden #{payload.sequence}) a los equipos #{payload.teamCodes}#{payload.reason != null ? ': ' + payload.reason : ''}. Cada equipo tiene que acusar la orden."
+    link: "/mantenimiento/turnos"
+
+  - key: field-evacuation-refused
+    event: field.possession.evacuation-acknowledged
+    when: "payload.accepted == false"
+    severity: CRITICAL
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    channels: [inbox, email]
+    title: "El equipo #{payload.teamCode} no puede desalojar la via (posesion #{payload.code})"
+    body: "#{event.actorUsername ?: 'Un dispositivo'} (#{payload.deviceId}) ha contestado que el equipo #{payload.teamCode} no puede desalojar la via en la posesion #{payload.code}#{payload.reason != null ? ': ' + payload.reason : ''}."
+    link: "/mantenimiento/turnos/#{payload.shiftId}"
+
+  - key: field-evacuation-complete
+    event: field.possession.evacuation-acknowledged
+    when: "payload.accepted == true and payload.allAcknowledged == true"
+    audiences: [PROFILE:mto-field-supervisor]
+    channels: [inbox]
+    title: "Desalojo acusado por todos los equipos de la posesion #{payload.code}"
+    body: "Con el acuse de #{payload.teamCode} (#{event.actorUsername ?: payload.deviceId}), todos los equipos de la posesion #{payload.code} han acusado la orden de desalojo."
+    link: "/mantenimiento/turnos"
+
+  - key: field-evacuation-unacknowledged
+    event: field.possession.evacuation-unacknowledged
+    severity: CRITICAL
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    channels: [inbox, email]
+    title: "Equipos sin acusar el desalojo en la posesion #{payload.code}: #{payload.pendingTeams}"
+    body: "#{payload.overdueSeconds} segundos despues de la orden de desalojo de #{payload.issuedBy} (#{payload.issuedAt}), en la posesion #{payload.code} siguen sin acusar: #{payload.pendingTeams}."
+    link: "/mantenimiento/turnos"
+
+  - key: field-all-clear
+    event: field.possession.clear-of-track
+    when: "payload.allClear == true"
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "Via libre en la posesion #{payload.code}"
+    body: "Con la salida de #{payload.teamCode} (#{event.actorUsername ?: payload.deviceId}), todos los equipos de la posesion #{payload.code} estan fuera de la via#{payload.earthingRemoved == true ? ', con sus puestas a tierra retiradas' : ''}."
+    link: "/mantenimiento/turnos"
+
   # --- El propio servicio -------------------------------------------------------------------------
 
   - key: system-source-stalled

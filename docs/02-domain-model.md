@@ -11,9 +11,9 @@ evento dejan una sola línea, y `seq` es el orden de llegada.
 
 | Campo | Qué |
 |---|---|
-| `sourceService` | Quién lo produjo: `mto-configuration`, `mto-maintenance`, `mto-stock`, `mto-users`, `keycloak-login`, `keycloak-admin`, `mto-notification` (los derivados) |
+| `sourceService` | Quién lo produjo: `mto-configuration`, `mto-maintenance`, `mto-stock`, `mto-users`, `mto-field`, `keycloak-login`, `keycloak-admin`, `mto-notification` (los derivados) |
 | `sourceEventId` | El `operationId` del evento, la huella SHA-256 de un evento de Keycloak (que no trae `id`) o la clave de un derivado (`streak:username:alice:<ms>`, `burst:<uuid>`, `delivery-dead:<uuid>`) |
-| `category` | `ACCESS`, `USERS`, `CONFIGURATION`, `MAINTENANCE`, `STOCK`, `SYSTEM`; se deriva del tipo |
+| `category` | `ACCESS`, `USERS`, `CONFIGURATION`, `MAINTENANCE`, `STOCK`, `FIELD`, `SYSTEM`; se deriva del tipo |
 | `type` | `<categoría>.<sujeto>.<evento>`, del catálogo de `ActivityTypes`: `access.login.failed`, `configuration.profile.updated`, `users.admin.user-updated`... Una regla que nombre un tipo que no existe impide arrancar |
 | `severity` | `INFO`, `WARNING`, `CRITICAL` |
 | `occurredAt` / `recordedAt` | Cuándo pasó (hora del origen) y cuándo se guardó |
