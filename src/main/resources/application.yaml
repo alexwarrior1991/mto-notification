@@ -240,6 +240,18 @@ app:
         dead-letter-queue: ${APP_RABBITMQ_STOCK_DEAD_LETTER_QUEUE:mto.notification.stock.queue.dlq}
         dead-letter-routing-key: ${APP_RABBITMQ_STOCK_DEAD_LETTER_ROUTING_KEY:mto.notification.stock.queue.dlq}
         listener-enabled: ${APP_RABBITMQ_STOCK_LISTENER_ENABLED:true}
+      # Lo que mto-field cuenta de una posesion de via (docs/06-messaging.md de ese repositorio):
+      # abierta y cerrada, el desalojo emitido, cada acuse, el equipo que no acusa a tiempo y la
+      # salida de via de cada equipo. Sale de su outbox, con el responsable o el tecnico del
+      # dispositivo como actor y el codigo de la posesion como correlacion.
+      field:
+        exchange: ${APP_RABBITMQ_FIELD_EXCHANGE:mto.field.exchange}
+        routing-key: "${APP_RABBITMQ_FIELD_ROUTING_KEY:mto.field.#}"
+        queue: ${APP_RABBITMQ_FIELD_QUEUE:mto.notification.field.queue}
+        dead-letter-exchange: ${APP_RABBITMQ_FIELD_DEAD_LETTER_EXCHANGE:mto.notification.field.queue.dlx}
+        dead-letter-queue: ${APP_RABBITMQ_FIELD_DEAD_LETTER_QUEUE:mto.notification.field.queue.dlq}
+        dead-letter-routing-key: ${APP_RABBITMQ_FIELD_DEAD_LETTER_ROUTING_KEY:mto.notification.field.queue.dlq}
+        listener-enabled: ${APP_RABBITMQ_FIELD_LISTENER_ENABLED:true}
 
   # La Admin API de Keycloak: el lector de eventos de acceso y de administracion, y el directorio
   # con el que se resuelven las direcciones de una audiencia. Todo con la cuenta de servicio
@@ -349,6 +361,7 @@ app:
         configuration: P400D
         maintenance: P400D
         stock: P400D
+        field: P400D
         system: P90D
       notifications: P180D
       inbox: P7D

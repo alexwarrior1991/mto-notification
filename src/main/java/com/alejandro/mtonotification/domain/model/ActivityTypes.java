@@ -100,6 +100,14 @@ public final class ActivityTypes {
     public static final String STOCK_RESERVATION_RELEASED = "stock.reservation.released";
     public static final String STOCK_ADJUSTMENT_REGISTERED = "stock.adjustment.registered";
 
+    // --- FIELD (mto-field, fase 5) ---
+    public static final String FIELD_POSSESSION_OPENED = "field.possession.opened";
+    public static final String FIELD_POSSESSION_CLOSED = "field.possession.closed";
+    public static final String FIELD_POSSESSION_EVACUATION_ISSUED = "field.possession.evacuation-issued";
+    public static final String FIELD_POSSESSION_EVACUATION_ACKNOWLEDGED = "field.possession.evacuation-acknowledged";
+    public static final String FIELD_POSSESSION_EVACUATION_UNACKNOWLEDGED = "field.possession.evacuation-unacknowledged";
+    public static final String FIELD_POSSESSION_CLEAR_OF_TRACK = "field.possession.clear-of-track";
+
     // --- SYSTEM (este servicio) ---
     public static final String SYSTEM_BROADCAST = "system.broadcast";
     public static final String SYSTEM_TEST_EMAIL = "system.test-email";
@@ -182,6 +190,9 @@ public final class ActivityTypes {
                 MAINTENANCE_ASSET_DISABLED, MAINTENANCE_PREVENTIVE_DUE_SOON,
                 STOCK_MATERIAL_BELOW_MINIMUM, STOCK_RESERVATION_CANCELLED, STOCK_RESERVATION_RELEASED,
                 STOCK_ADJUSTMENT_REGISTERED,
+                FIELD_POSSESSION_OPENED, FIELD_POSSESSION_CLOSED, FIELD_POSSESSION_EVACUATION_ISSUED,
+                FIELD_POSSESSION_EVACUATION_ACKNOWLEDGED, FIELD_POSSESSION_EVACUATION_UNACKNOWLEDGED,
+                FIELD_POSSESSION_CLEAR_OF_TRACK,
                 SYSTEM_BROADCAST, SYSTEM_TEST_EMAIL, SYSTEM_SOURCE_STALLED, SYSTEM_DELIVERY_DEAD}) {
             types.put(type, ActivityCategory.ofType(type));
         }

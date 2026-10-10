@@ -62,6 +62,7 @@ class RetentionPurgeImpl implements RetentionPurge {
         deleted.put("activity_event." + ActivityCategory.CONFIGURATION, purgeCategory(ActivityCategory.CONFIGURATION, retention.activity().configuration(), now, batch));
         deleted.put("activity_event." + ActivityCategory.MAINTENANCE, purgeCategory(ActivityCategory.MAINTENANCE, retention.activity().maintenance(), now, batch));
         deleted.put("activity_event." + ActivityCategory.STOCK, purgeCategory(ActivityCategory.STOCK, retention.activity().stock(), now, batch));
+        deleted.put("activity_event." + ActivityCategory.FIELD, purgeCategory(ActivityCategory.FIELD, retention.activity().field(), now, batch));
         deleted.put("activity_event." + ActivityCategory.SYSTEM, purgeCategory(ActivityCategory.SYSTEM, retention.activity().system(), now, batch));
         deleted.put("notification", loop(() -> notificationRepository.deleteCreatedBefore(now.minus(retention.notifications()), batch)));
         deleted.put("inbox_message", loop(() -> inboxMessageRepository.deleteProcessedBefore(now.minus(retention.inbox()), batch)));

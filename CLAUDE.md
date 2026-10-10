@@ -58,7 +58,7 @@ Las mismas tres capas que `mto-maintenance` bajo `com.alejandro.mtonotification`
   o `KeycloakEventsPollerImpl` → `InboxMessageServiceImpl` (`IdempotentSourceEventProcessor`) →
   `DispatchingSourceEventHandler` → un `ActivitySourceAdapter` por fuente de RabbitMQ
   (`MasterDataSourceAdapter`, `ConfigurationSourceAdapter`, `UsersSourceAdapter`,
-  `MaintenanceSourceAdapter`, `StockSourceAdapter`; los de Keycloak,
+  `MaintenanceSourceAdapter`, `StockSourceAdapter`, `FieldSourceAdapter`; los de Keycloak,
   `KeycloakLoginEventAdapter` y `KeycloakAdminEventAdapter`, los llama el lector) →
   `ActivityIngestorImpl` (`insert ... on conflict do nothing`; si insertó: `RuleEngineImpl` y los
   `DerivedEventDetector`, hoy `FailedLoginStreakDetector` y `UsersChangeCorrelator`) →
@@ -130,14 +130,16 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
   `values`) y el tipo de la línea sale de ahí (`<categoría>.<entityName>.<eventName>`), como la
   clave de enrutado; `users.admin.*` es de Keycloak y un productor que lo use va a la DLQ. Los
   ejemplos que cada productor versiona (`docs/messaging/examples/` de `mto-configuration`,
-  `mto-users`, `mto-maintenance` y `mto-stock`) están copiados en
+  `mto-users`, `mto-maintenance`, `mto-stock` y `mto-field`) están copiados en
   `src/test/resources/contracts/<productor>/` y son lo que `BusinessLayerTest` y
   `MessagingLayerTest` hacen pasar por los adaptadores: un cambio de contrato se copia aquí en el
-  mismo cambio. `MaintenanceSourceAdapter` y `StockSourceAdapter` guardan el `values` entero (el
-  productor ya lo publica por lista blanca y sin secretos) y ponen la gravedad por el hecho
-  (urgente, crítico, inseguro → `CRITICAL`; bajo mínimo, una reserva tocada por alguien distinto de
-  quien la creó, un ajuste negativo → `WARNING`); las reglas leen `payload.type`, `payload.to`,
-  `payload.assignedUser`, `payload.stockErrorCode`, `payload.createdBy`, `payload.direction`... y
+  mismo cambio. `MaintenanceSourceAdapter`, `StockSourceAdapter` y `FieldSourceAdapter` guardan el
+  `values` entero (el productor ya lo publica por lista blanca y sin secretos) y ponen la gravedad
+  por el hecho (urgente, crítico, inseguro, un desalojo ordenado, un equipo que no lo acusa a tiempo
+  o que dice que no → `CRITICAL`; bajo mínimo, una reserva tocada por alguien distinto de quien la
+  creó, un ajuste negativo, una posesión cerrada a la fuerza → `WARNING`); las reglas leen
+  `payload.type`, `payload.to`, `payload.assignedUser`, `payload.stockErrorCode`,
+  `payload.createdBy`, `payload.direction`, `payload.accepted`, `payload.allClear`... y
   las variables `maintenance-service-account` y `large-adjustment-threshold`.
 - **Un cambio hecho desde `mto-users` se registra una vez con nombre**: su evento (con la persona)
   y el de administración de Keycloak del mismo cambio (con `mto-users-svc`) se funden marcando el
@@ -163,11 +165,11 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
 Una clase por capa; se añaden métodos, no clases: `DomainModelTest`, `RulesConfigurationTest` (el
 YAML real carga; una regla rota impide arrancar), `BusinessLayerTest` (motor, ingesta, detector de
 rachas, datos maestros, los trabajos de configuración, las acciones de `mto-users` y los eventos de
-`mto-maintenance` y de `mto-stock` con los ejemplos de `src/test/resources/contracts`, las reglas de
-mantenimiento y de almacén enviadas pasando por el motor real, el correlador, adaptadores y lector
+`mto-maintenance`, de `mto-stock` y de `mto-field` con los ejemplos de `src/test/resources/contracts`,
+las reglas de mantenimiento, de almacén y de campo enviadas pasando por el motor real, el correlador, adaptadores y lector
 de Keycloak, despachador y resolutor, y el filtro de IP de los accesos, que nunca consulta el DNS;
 con dobles), `MessagingLayerTest` (el JSON literal de `mto-configuration`
-y los ejemplos de cada productor, consumidor, inbox, firma y topología de las cinco fuentes con
+y los ejemplos de cada productor, consumidor, inbox, firma y topología de las seis fuentes con
 `ApplicationContextRunner`), `KeycloakEventsClientTest` (`MockRestServiceServer`),
 `MailLayerTest` (GreenMail), `MapperLayerTest`, `DtoValidationTest`, `JpaEntityModelTest`,
 `RestControllerLayerTest` (`@WebMvcTest` de los cuatro controladores con la cadena real y

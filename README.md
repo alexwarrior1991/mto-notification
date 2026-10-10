@@ -25,7 +25,8 @@ acciones administrativas de `mto-users` con la persona que las hizo, el lector d
 Keycloak (accesos y administración del realm, con rachas de accesos fallidos) y el correlador que
 funde el evento de Keycloak con el de `mto-users` del mismo cambio, las reglas en YAML, la bandeja
 por persona, el correo por Mailpit, la retención y la API de administración, y lo que publican
-`mto-maintenance` y `mto-stock`. Quedan la campana y las pantallas del backoffice
+`mto-maintenance`, `mto-stock` y, desde su fase 5, `mto-field` (lo que pasa en una posesión de vía
+nocturna: la categoría `FIELD`, nueva en `V2`). Quedan la campana y las pantallas del backoffice
 ([`docs/05-development-roadmap.md`](docs/05-development-roadmap.md)).
 
 ## Qué hace
@@ -127,6 +128,7 @@ frenos por regla y la marca del lector. Detalle en [`docs/03-database.md`](docs/
 | Accesos y administración de Keycloak | Sondeo de la Admin API cada 20 s con `mto-notification-svc` (`view-events`), marca de agua por fuente y arrendamiento | Idempotente por huella del evento; tres fallos seguidos son una racha; un cambio hecho desde la consola es «fuera de la aplicación» |
 | `mto-maintenance` | Cola propia `mto.notification.maintenance.queue` sobre `mto.maintenance.exchange` (`mto.maintenance.#`) | Una línea por evento de su outbox (órdenes y sus transiciones, defectos, inspecciones, turnos, líneas de material, activos desactivados allí, el aviso diario de preventivos) con la persona y la correlación de la petición |
 | `mto-stock` | Cola propia `mto.notification.stock.queue` sobre `mto.stock.exchange` (`mto.stock.#`) | Un material cuyo disponible total cae por debajo de su mínimo (solo al cruzar), una reserva cancelada o liberada (con quien la creó) y un ajuste de inventario, con la persona o la cuenta de servicio de `mto-maintenance` y la correlación de la petición |
+| `mto-field` | Cola propia `mto.notification.field.queue` sobre `mto.field.exchange` (`mto.field.#`) | Una posesión de vía abierta o cerrada, el desalojo ordenado, cada acuse de un equipo, el equipo que no acusa dentro del plazo (su vigilante, sin persona) y la salida de vía de cada equipo, con el responsable o el técnico del dispositivo y el código de la posesión como correlación |
 
 Todo en [`docs/06-messaging.md`](docs/06-messaging.md), reglas incluidas.
 

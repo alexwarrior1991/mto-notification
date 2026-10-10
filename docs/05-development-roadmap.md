@@ -42,15 +42,23 @@
 - **Fase 5** (`mto-backoffice`): la campana con el contador, la bandeja (`notificaciones`) y el
   registro (`actividad`).
 
-## Más adelante: `mto-field`
+## `mto-field`
 
-La aplicación de campo para los técnicos. No se construye todavía, pero el diseño la deja preparada:
+`mto-field` existe desde después de este roadmap (la consola en directo de una posesión de vía
+nocturna, sobre gRPC: quién está conectado, qué tareas empiezan y acaban y la orden de desalojo
+con acuse nominal) y desde su fase 5 es una fuente más de este servicio: publica desde su outbox lo
+que pasa en una posesión (abierta y cerrada, el desalojo con sus acuses, el equipo que no acusa a
+tiempo, la salida de vía de cada equipo) por `mto.field.exchange`, con la categoría `FIELD` (`V2`),
+el adaptador `FieldSourceAdapter` y las reglas `field-*`, que avisan a `mto-field-supervisor` (que
+desde entonces tiene bandeja) y a `mto-maintenance-manager` ([`06-messaging.md`](06-messaging.md)).
+Lo que el diseño dejaba preparado y sigue pendiente:
 
 - Canal **push**: una implementación más de `DeliveryChannel` y una tabla de dispositivos
   (`PUT/DELETE /devices/{token}`); el canal es un `varchar` validado por el registro, sin
   migración de enumerado.
 - Destinatarios por **equipo** o **zona**: dos `kind` de audiencia reservados; su casado necesita
-  un dato que no está en el token (el equipo o la zona de la persona), que se resolverá con un
-  atributo de usuario de Keycloak.
-- Avisos hacia el campo (turno asignado, orden urgente en su zona) y desde el campo (tarea
-  completada, defecto con foto): mismo vocabulario de eventos; solo falta el productor.
+  un dato que no está en el token de este servicio (el equipo o la zona de la persona). El equipo
+  ya viaja en el claim `groups` del token de `mto-frontend`, que `mto-field` usa para ligar un
+  dispositivo a su equipo, así que `TEAM:` podría leer de ahí.
+- Avisos hacia el campo (turno asignado, orden urgente en su zona): mismo vocabulario de eventos;
+  solo falta el canal y la audiencia.

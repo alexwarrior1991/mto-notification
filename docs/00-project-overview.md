@@ -13,12 +13,12 @@ urgente, de un material bajo mínimo o de tres logins fallidos seguidos.
 
 - **Un registro de actividad** normalizado y append-only, alimentado por las fuentes que ya existen
   (los eventos de datos maestros, los eventos de acceso y de administración de Keycloak) y por las
-  que se crean para ello (los outbox de `mto-maintenance` y `mto-stock`, el evento propio de
-  `mto-users`). Se consulta con filtros y con permiso; los accesos, que llevan usuario e IP, con un
+  que se crean para ello (los outbox de `mto-maintenance`, `mto-stock` y `mto-field`, el evento
+  propio de `mto-users`). Se consulta con filtros y con permiso; los accesos, que llevan usuario e IP, con un
   permiso aparte.
 - **Un motor de reglas** que decide qué merece un aviso, a quién (un usuario, un rol de cliente o un
   perfil; más adelante un equipo o una zona) y por qué canal: la bandeja de la aplicación, con
-  leídas y no leídas por persona, y el correo para lo urgente; más adelante push para `mto-field`.
+  leídas y no leídas por persona, y el correo para lo urgente; más adelante push.
 
 ## Lo que vive en otro sitio, a propósito
 
@@ -27,6 +27,7 @@ urgente, de un material bajo mínimo o de tres logins fallidos seguidos.
 | Datos maestros de infraestructura | `mto-configuration` | Consumidos como eventos; aquí solo queda la línea del registro |
 | Órdenes, defectos, turnos, materiales | `mto-maintenance` | Eventos de su outbox |
 | Existencias, reservas, movimientos | `mto-stock` | Eventos de su outbox |
+| Posesiones de vía: desalojos, acuses, vía libre | `mto-field` | Eventos de su outbox (el tablero en directo se queda allí) |
 | Usuarios, roles, perfiles | `mto-users` y Keycloak | El evento propio de `mto-users` (con la persona) y los eventos de administración de Keycloak |
 | Identidad y tokens | Keycloak (`mto-platform`) | Resource server; los permisos son roles de cliente de `mto-notification-api` |
 | Enrutado público | `mto-gateway` | `/api/notifications/**` → `/api/v1/notifications/**` |

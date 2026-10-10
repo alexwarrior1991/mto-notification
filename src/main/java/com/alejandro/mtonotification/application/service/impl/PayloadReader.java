@@ -45,6 +45,21 @@ final class PayloadReader {
         return null;
     }
 
+    /** Un booleano JSON, o su texto ({@code "true"}/{@code "false"}); lo demas, {@code null}. */
+    Boolean booleanValue(String key) {
+        Object value = values.get(key);
+        if (value instanceof Boolean flag) {
+            return flag;
+        }
+        if (value instanceof String text) {
+            String normalized = text.trim().toLowerCase(java.util.Locale.ROOT);
+            if (normalized.equals("true") || normalized.equals("false")) {
+                return Boolean.valueOf(normalized);
+            }
+        }
+        return null;
+    }
+
     boolean has(String key) {
         return values.get(key) != null;
     }

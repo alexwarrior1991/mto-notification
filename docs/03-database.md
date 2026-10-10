@@ -20,7 +20,9 @@ perfiles, así que un cambio de esquema es siempre una migración nueva.
 ## Enumerados
 
 `inbox_message_status` (`RECEIVED`, `PROCESSING`, `PROCESSED`, `FAILED`), `activity_category`
-(`ACCESS`, `USERS`, `CONFIGURATION`, `MAINTENANCE`, `STOCK`, `SYSTEM`), `activity_severity` (`INFO`,
+(`ACCESS`, `USERS`, `CONFIGURATION`, `MAINTENANCE`, `STOCK`, `SYSTEM` en `V1`; `FIELD` lo añade `V2`
+con `ALTER TYPE ... ADD VALUE`, que corre dentro de la transacción de Flyway porque la migración no
+usa el valor nuevo), `activity_severity` (`INFO`,
 `WARNING`, `CRITICAL`), `actor_kind` (`PERSON`, `SERVICE`, `SYSTEM`), `activity_burst_status`
 (`OPEN`, `CLOSED`), `delivery_scope` (`AUDIENCE`, `RECIPIENT`), `delivery_status` (`PENDING`,
 `IN_PROGRESS`, `SENT`, `FAILED`, `SKIPPED`).

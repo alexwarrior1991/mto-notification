@@ -46,7 +46,7 @@ Reglas que mantienen honestas las capas:
 
 | Dirección | Par | Mecanismo |
 |---|---|---|
-| Entrante | `mto-configuration` (fase 2a); `mto-maintenance`, `mto-stock`, `mto-users` después | RabbitMQ, una cola propia por fuente con DLX/DLQ → inbox idempotente |
+| Entrante | `mto-configuration` (fase 2a); `mto-maintenance`, `mto-stock`, `mto-users` después; `mto-field` desde su fase 5 | RabbitMQ, una cola propia por fuente con DLX/DLQ → inbox idempotente |
 | Saliente | Keycloak (Admin API) | REST con la cuenta de servicio `mto-notification-svc`, circuito `keycloak`, marca de agua |
 | Saliente | SMTP (Mailpit en local) | Correo para lo urgente |
 | Entrante | `mto-gateway` / backoffice | JWT del realm `mto` con audiencia `mto-notification-api` |

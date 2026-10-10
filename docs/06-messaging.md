@@ -10,6 +10,7 @@
 | `mto-users` | `mto.users.exchange`, `mto.users.#` → `mto.notification.users.queue` | Fase 2d |
 | `mto-maintenance` | `mto.maintenance.exchange`, `mto.maintenance.#` → `mto.notification.maintenance.queue` | Fase 3b |
 | `mto-stock` | `mto.stock.exchange`, `mto.stock.#` → `mto.notification.stock.queue` | Fase 4b |
+| `mto-field` | `mto.field.exchange`, `mto.field.#` → `mto.notification.field.queue` | Fase 5 de `mto-field` |
 
 Cada cola lleva su DLX/DLQ (`<cola>.dlx`, `<cola>.dlq`), como las de `mto-stock` y
 `mto-maintenance`, y este servicio es su dueño; el exchange se declara en los dos lados con los
@@ -28,7 +29,7 @@ y `traceparent`. Los productores nuevos añaden dos claves, `actor{id, username,
 `correlationId`; `SourceEnvelope` ya las lee y las tolera ausentes. Solo se añaden claves: el
 contrato es de cada productor y este servicio lee lo que reconoce e ignora lo demás. Los eventos
 propios de un servicio (`mto.configuration.exchange`, `mto.users.exchange`,
-`mto.maintenance.exchange`) llevan `data` en la forma `DomainEvent` (`entityName`, `entityId`,
+`mto.maintenance.exchange`, `mto.stock.exchange`, `mto.field.exchange`) llevan `data` en la forma `DomainEvent` (`entityName`, `entityId`,
 `eventName`, `values`), y el tipo de la línea sale de ahí: `<categoría>.<entityName>.<eventName>`,
 igual que la clave de enrutado. Un mensaje sin
 `data`, sin `entityName`, sin `eventName` (los eventos propios) o con una operación que no es
@@ -126,6 +127,29 @@ quien la creó (`createdBy` frente al actor del sobre) y un ajuste negativo son 
 `INFO`. Las entradas, las salidas, las transferencias y las reservas consumidas no publican:
 `mto-maintenance` ya cuenta lo que consume. Un evento de ese exchange que este servicio aún no
 conoce se registra igualmente.
+
+### `mto-field`
+
+`FieldSourceAdapter` escucha `mto.field.#` (`docs/06-messaging.md` de `mto-field`, *Published
+events*): lo que la consola en directo de una posesión de vía nocturna publica desde su outbox, los
+seis eventos de un solo agregado, `possession`: `field.possession.opened` y `closed`,
+`evacuation-issued` (el responsable ordena el desalojo de la vía), `evacuation-acknowledged` (un
+equipo acusa, con `accepted` y, si dice que no, su `reason`), `evacuation-unacknowledged` (el
+vigilante de `mto-field`: un desalojo con equipos sin acusar pasado el plazo, una sola vez por
+orden, con `pendingTeams` y `overdueSeconds`) y `clear-of-track` (un equipo sale de la vía, con
+`earthingRemoved` y `allClear`). El actor es el del token de la llamada gRPC: quien abre, cierra y
+ordena es el responsable; quien acusa o sale de la vía, el técnico del dispositivo; el vigilante no
+tiene persona detrás (`SYSTEM`). La correlación es el código de la posesión (`PO-000012`), que
+agrupa la noche entera, como un trabajo de `mto-configuration` agrupa sus eventos bajo su `jobId`.
+El sujeto es siempre la posesión por su id, con su código de etiqueta y, en lo que hace un equipo,
+el código del equipo detrás (`PO-000012 EQ-NORTE`). Del `values` se guarda todo, con lo común de la
+posesión en cada evento (`code`, `status`, `shiftDate`, `endsAt`, `teamCodes`, `shifts` con el id
+de cada turno de `mto-maintenance`, que es a lo que enlazan las reglas). La gravedad: un desalojo
+ordenado, un equipo que no acusa a tiempo y un acuse que dice que no son `CRITICAL`; una posesión
+cerrada a la fuerza con equipos aún en la vía es `WARNING`; lo demás, `INFO`. Los mensajes del
+responsable a los equipos, los cambios de ventana, los `EventResult` y las tareas que empiezan y
+acaban no se publican: de las tareas ya cuenta `mto-maintenance`, y lo demás es del canal en
+directo. Un evento de ese exchange que este servicio aún no conoce se registra igualmente.
 
 ### El correlador de usuarios
 
@@ -237,6 +261,12 @@ credencial. El actor es `SERVICE` cuando el cliente resuelto es `mto-users-svc`
 | `stock-material-below-minimum` | `stock.material.below-minimum` | `mto-warehouse-admin` | bandeja, correo; freno 24 h por material |
 | `stock-reservation-touched-by-someone-else` | `stock.reservation.cancelled` o `released` de una reserva creada por `service-account-mto-maintenance-svc` (`vars['maintenance-service-account']`) por alguien que no es esa cuenta | `mto-maintenance-manager` | bandeja, correo |
 | `stock-large-negative-adjustment` | `stock.adjustment.registered` con `direction == NEGATIVE` y `quantity >= vars['large-adjustment-threshold']` (100) | `mto-warehouse-admin` | bandeja, correo |
+| `field-possession-opened`, `field-possession-closed` | `field.possession.opened`, `field.possession.closed` (el título dice «a la fuerza» y la gravedad es la del hecho) | `mto-field-supervisor`, `mto-maintenance-manager` | bandeja |
+| `field-evacuation-issued` | `field.possession.evacuation-issued` | `mto-field-supervisor`, `mto-maintenance-manager` | bandeja, correo; `CRITICAL` |
+| `field-evacuation-refused` | `field.possession.evacuation-acknowledged` con `accepted == false` | `mto-field-supervisor`, `mto-maintenance-manager` | bandeja, correo; `CRITICAL`; enlaza al turno del equipo |
+| `field-evacuation-complete` | `field.possession.evacuation-acknowledged` con `allAcknowledged` | `mto-field-supervisor` | bandeja |
+| `field-evacuation-unacknowledged` | `field.possession.evacuation-unacknowledged` (el vigilante de `mto-field`, una vez por orden) | `mto-field-supervisor`, `mto-maintenance-manager` | bandeja, correo; `CRITICAL` |
+| `field-all-clear` | `field.possession.clear-of-track` con `allClear` | `mto-field-supervisor`, `mto-maintenance-manager` | bandeja |
 | `system-source-stalled`, `system-delivery-dead` | los eventos del propio servicio | `mto-ops` | bandeja, correo |
 
 Registro sin aviso: `access.login`, `access.logout`, las ráfagas pequeñas, `users.user.updated`,
