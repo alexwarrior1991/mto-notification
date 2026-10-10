@@ -150,7 +150,7 @@ public record NotificationProperties(
             cron = cron == null || cron.isBlank() ? "0 17 3 * * *" : cron;
             batchSize = batchSize <= 0 ? 1000 : batchSize;
             maxBatchesPerRun = maxBatchesPerRun <= 0 ? 50 : maxBatchesPerRun;
-            activity = activity == null ? new ActivityRetention(null, null, null, null, null, null) : activity;
+            activity = activity == null ? new ActivityRetention(null, null, null, null, null, null, null) : activity;
             notifications = notifications == null ? Duration.ofDays(180) : notifications;
             inbox = inbox == null ? Duration.ofDays(7) : inbox;
             bursts = bursts == null ? Duration.ofDays(1) : bursts;
@@ -159,13 +159,14 @@ public record NotificationProperties(
     }
 
     public record ActivityRetention(Duration access, Duration users, Duration configuration, Duration maintenance,
-                                    Duration stock, Duration system) {
+                                    Duration stock, Duration field, Duration system) {
         public ActivityRetention {
             access = access == null ? Duration.ofDays(90) : access;
             users = users == null ? Duration.ofDays(400) : users;
             configuration = configuration == null ? Duration.ofDays(400) : configuration;
             maintenance = maintenance == null ? Duration.ofDays(400) : maintenance;
             stock = stock == null ? Duration.ofDays(400) : stock;
+            field = field == null ? Duration.ofDays(400) : field;
             system = system == null ? Duration.ofDays(90) : system;
         }
     }

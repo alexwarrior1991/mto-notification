@@ -3,6 +3,7 @@ package com.alejandro.mtonotification.configuration.rabbitmq;
 import com.alejandro.mtonotification.application.service.SourceEventProcessor;
 import com.alejandro.mtonotification.configuration.messaging.MessagePayloadSignatureVerifier;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.ConfigurationSourceConsumer;
+import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.FieldSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.MaintenanceSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.MasterDataSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.RabbitListenerContainerFactoryNames;
@@ -140,5 +141,12 @@ public class RabbitMqConfiguration {
     public StockSourceConsumer stockSourceConsumer(SourceEventProcessor processor, MessagePayloadSignatureVerifier signatureVerifier) {
         LOGGER.info("Stock events consumer enabled on {}", properties.source(SourceRabbitMqNames.STOCK_SOURCE).queue());
         return new StockSourceConsumer(processor, signatureVerifier);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "app.rabbitmq.sources.field", name = "listener-enabled", havingValue = "true", matchIfMissing = true)
+    public FieldSourceConsumer fieldSourceConsumer(SourceEventProcessor processor, MessagePayloadSignatureVerifier signatureVerifier) {
+        LOGGER.info("Field events consumer enabled on {}", properties.source(SourceRabbitMqNames.FIELD_SOURCE).queue());
+        return new FieldSourceConsumer(processor, signatureVerifier);
     }
 }

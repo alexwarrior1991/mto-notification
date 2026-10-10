@@ -51,6 +51,15 @@ public final class SourceRabbitMqNames {
     public static final String STOCK_DEAD_LETTER_QUEUE = STOCK_QUEUE + ".dlq";
     public static final String STOCK_DEAD_LETTER_ROUTING_KEY = STOCK_QUEUE + ".dlq";
 
+    /** Lo que mto-field cuenta de una posesion de via: abierta y cerrada, el desalojo con sus acuses y la salida de via de cada equipo. */
+    public static final String FIELD_SOURCE = "field";
+    public static final String FIELD_EXCHANGE = "mto.field.exchange";
+    public static final String FIELD_ROUTING_PATTERN = "mto.field.#";
+    public static final String FIELD_QUEUE = "mto.notification.field.queue";
+    public static final String FIELD_DEAD_LETTER_EXCHANGE = FIELD_QUEUE + ".dlx";
+    public static final String FIELD_DEAD_LETTER_QUEUE = FIELD_QUEUE + ".dlq";
+    public static final String FIELD_DEAD_LETTER_ROUTING_KEY = FIELD_QUEUE + ".dlq";
+
     public static final String ARG_DEAD_LETTER_EXCHANGE = "x-dead-letter-exchange";
     public static final String ARG_DEAD_LETTER_ROUTING_KEY = "x-dead-letter-routing-key";
 
