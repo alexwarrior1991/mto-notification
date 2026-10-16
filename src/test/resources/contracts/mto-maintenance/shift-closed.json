@@ -29,10 +29,37 @@
       "actualStart": "2026-09-29T22:05:00Z",
       "actualEnd": "2026-09-30T03:50:00Z",
       "voltageCutoffAt": "2026-09-29T22:20:00Z",
-      "netWorkMinutes": 330
+      "netWorkMinutes": 330,
+      "parkingPlace": "Herzliya siding",
+      "vehicles": [
+        {
+          "id": "f0000000-0000-4000-8000-000000000002",
+          "code": "DR-02",
+          "parking": {
+            "siteId": null,
+            "trackId": 31,
+            "kp": 4.250,
+            "description": "Siding north of Herzliya"
+          }
+        }
+      ],
+      "vehicleIds": [
+        "f0000000-0000-4000-8000-000000000002"
+      ],
+      "vehicleCodes": [
+        "DR-02"
+      ],
+      "teamLeaderPersonId": "c0000000-0000-4000-8000-000000000003",
+      "teamLeaderUsername": "equipo.jefe",
+      "supervisorPersonId": "c0000000-0000-4000-8000-000000000002",
+      "linemanPersonIds": [
+        "c0000000-0000-4000-8000-000000000010",
+        "c0000000-0000-4000-8000-000000000011",
+        "c0000000-0000-4000-8000-000000000012"
+      ]
     }
   },
-  "messageHash": "aa14d2d2b73bf57365aa715a37341139e57f3df41f2555fbf51d99c42dc3900f",
+  "messageHash": "ae3637584dabbd3402c63e3755907487b8d02603d21604e11df1400c44d9c0fb",
   "actor": {
     "id": "6f1b1c8e-0000-4000-8000-000000000031",
     "username": "mantenimiento.tecnico",

@@ -35,9 +35,9 @@ import java.util.Set;
  *
  * <p>La gravedad de la linea es la del hecho: una orden urgente y un defecto o una inspeccion
  * criticos son {@code CRITICAL}; un defecto grave, una inspeccion con defecto mayor, un punto en
- * {@code DEFECT}, una orden cancelada, un material que el almacen rechaza o no contesta, un activo
- * desactivado y unos preventivos ya vencidos son {@code WARNING}; lo demas es {@code INFO}. La
- * regla puede subirla en el aviso.</p>
+ * {@code DEFECT}, una orden cancelada, un turno cancelado, un material que el almacen rechaza o no
+ * contesta, un activo desactivado y unos preventivos ya vencidos son {@code WARNING}; lo demas es
+ * {@code INFO}. La regla puede subirla en el aviso.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -59,10 +59,14 @@ class MaintenanceSourceAdapter implements ActivitySourceAdapter {
     static final String MAJOR_DEFECT = "MAJOR_DEFECT";
     static final String CANCELLED = "CANCELLED";
 
+    // Un turno cancelado es WARNING, como una orden cancelada: es una posesion de via que no se
+    // hizo, o que se dejo a medias si ya habia empezado (y entonces mto-resources devuelve sus
+    // vehiculos a su sitio); sus tareas abiertas vuelven a la cola de la orden. Iniciar y cerrar un
+    // turno son lo ordinario (INFO).
     static final Set<String> WARNING_TYPES = Set.of(
-            ActivityTypes.MAINTENANCE_INSPECTION_ITEM_FAILED, ActivityTypes.MAINTENANCE_MATERIAL_REJECTED,
-            ActivityTypes.MAINTENANCE_MATERIAL_FAILED, ActivityTypes.MAINTENANCE_MATERIAL_IN_DOUBT,
-            ActivityTypes.MAINTENANCE_ASSET_DISABLED);
+            ActivityTypes.MAINTENANCE_INSPECTION_ITEM_FAILED, ActivityTypes.MAINTENANCE_SHIFT_CANCELLED,
+            ActivityTypes.MAINTENANCE_MATERIAL_REJECTED, ActivityTypes.MAINTENANCE_MATERIAL_FAILED,
+            ActivityTypes.MAINTENANCE_MATERIAL_IN_DOUBT, ActivityTypes.MAINTENANCE_ASSET_DISABLED);
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MaintenanceSourceAdapter.class);
 

@@ -88,6 +88,7 @@ public final class ActivityTypes {
     public static final String MAINTENANCE_INSPECTION_CORRECTIVE_ORDER_CREATED = "maintenance.inspection.corrective-order-created";
     public static final String MAINTENANCE_SHIFT_STARTED = "maintenance.shift.started";
     public static final String MAINTENANCE_SHIFT_CLOSED = "maintenance.shift.closed";
+    public static final String MAINTENANCE_SHIFT_CANCELLED = "maintenance.shift.cancelled";
     public static final String MAINTENANCE_MATERIAL_REJECTED = "maintenance.material.rejected";
     public static final String MAINTENANCE_MATERIAL_FAILED = "maintenance.material.failed";
     public static final String MAINTENANCE_MATERIAL_IN_DOUBT = "maintenance.material.in-doubt";
@@ -186,7 +187,7 @@ public final class ActivityTypes {
                 MAINTENANCE_DEFECT_CREATED, MAINTENANCE_DEFECT_STATUS_CHANGED, MAINTENANCE_INSPECTION_CREATED,
                 MAINTENANCE_INSPECTION_ITEM_FAILED, MAINTENANCE_INSPECTION_DEFECT_CREATED,
                 MAINTENANCE_INSPECTION_CORRECTIVE_ORDER_CREATED, MAINTENANCE_SHIFT_STARTED, MAINTENANCE_SHIFT_CLOSED,
-                MAINTENANCE_MATERIAL_REJECTED, MAINTENANCE_MATERIAL_FAILED, MAINTENANCE_MATERIAL_IN_DOUBT,
+                MAINTENANCE_SHIFT_CANCELLED, MAINTENANCE_MATERIAL_REJECTED, MAINTENANCE_MATERIAL_FAILED, MAINTENANCE_MATERIAL_IN_DOUBT,
                 MAINTENANCE_ASSET_DISABLED, MAINTENANCE_PREVENTIVE_DUE_SOON,
                 STOCK_MATERIAL_BELOW_MINIMUM, STOCK_RESERVATION_CANCELLED, STOCK_RESERVATION_RELEASED,
                 STOCK_ADJUSTMENT_REGISTERED,

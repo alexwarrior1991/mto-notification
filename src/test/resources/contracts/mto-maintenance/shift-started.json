@@ -29,10 +29,32 @@
       "actualStart": "2026-09-29T22:05:00Z",
       "actualEnd": null,
       "voltageCutoffAt": "2026-09-29T22:20:00Z",
-      "netWorkMinutes": null
+      "netWorkMinutes": null,
+      "parkingPlace": "Herzliya siding",
+      "vehicles": [
+        {
+          "id": "f0000000-0000-4000-8000-000000000002",
+          "code": "DR-02",
+          "parking": null
+        }
+      ],
+      "vehicleIds": [
+        "f0000000-0000-4000-8000-000000000002"
+      ],
+      "vehicleCodes": [
+        "DR-02"
+      ],
+      "teamLeaderPersonId": "c0000000-0000-4000-8000-000000000003",
+      "teamLeaderUsername": "equipo.jefe",
+      "supervisorPersonId": "c0000000-0000-4000-8000-000000000002",
+      "linemanPersonIds": [
+        "c0000000-0000-4000-8000-000000000010",
+        "c0000000-0000-4000-8000-000000000011",
+        "c0000000-0000-4000-8000-000000000012"
+      ]
     }
   },
-  "messageHash": "ebc30c4e1bfff1532d45de63b9e3e1e315a8c0ac2d678920177551574ee8ba45",
+  "messageHash": "94247475fe45e683eec1ce1a032858c43e92faf1d9651a11cec21df73a8d17b6",
   "actor": {
     "id": "6f1b1c8e-0000-4000-8000-000000000031",
     "username": "mantenimiento.tecnico",

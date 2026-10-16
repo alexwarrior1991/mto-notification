@@ -1068,6 +1068,7 @@ class BusinessLayerTest {
             expected.put("inspection-corrective-order-created", ActivitySeverity.WARNING);
             expected.put("shift-started", ActivitySeverity.INFO);
             expected.put("shift-closed", ActivitySeverity.INFO);
+            expected.put("shift-cancelled", ActivitySeverity.WARNING);
             expected.put("material-rejected", ActivitySeverity.WARNING);
             expected.put("material-failed", ActivitySeverity.WARNING);
             expected.put("material-in-doubt", ActivitySeverity.WARNING);
@@ -1083,14 +1084,47 @@ class BusinessLayerTest {
             for (Map.Entry<String, ActivitySeverity> entry : expected.entrySet()) {
                 ActivityEventDraft draft = all.get(index++);
                 assertEquals("maintenance." + entry.getKey().replaceFirst("-", "."), draft.type(), entry.getKey());
-                assertTrue(ActivityTypes.isKnown(draft.type()), "los dieciseis estan en el catalogo: " + draft.type());
+                assertTrue(ActivityTypes.isKnown(draft.type()), "los diecisiete estan en el catalogo: " + draft.type());
                 assertEquals(entry.getValue(), draft.severity(), entry.getKey());
                 assertEquals("mto-maintenance", draft.sourceService());
                 assertNotNull(draft.subject().id(), entry.getKey());
                 assertEquals(entry.getKey().replaceFirst("-.*", ""), draft.payload().get("entityName"), entry.getKey());
             }
-            assertEquals(Actor.system(), all.get(13).actor(), "el reintento automatico de stock no tiene persona");
-            assertEquals(Actor.person("mantenimiento.responsable", "6f1b1c8e-0000-4000-8000-000000000032"), all.get(14).actor());
+            assertEquals(Actor.system(), all.get(14).actor(), "el reintento automatico de stock no tiene persona");
+            assertEquals(Actor.person("mantenimiento.responsable", "6f1b1c8e-0000-4000-8000-000000000032"), all.get(15).actor());
+        }
+
+        @Test
+        void theShiftExamplesKeepTheCrewAndTheVehiclesOfMtoResourcesAndTheCancelledOneIsAWarning() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-maintenance/shift-cancelled.json"), context);
+            adapter.handle(fixture("contracts/mto-maintenance/shift-closed.json"), context);
+
+            ArgumentCaptor<ActivityEventDraft> drafts = ArgumentCaptor.forClass(ActivityEventDraft.class);
+            verify(ingestor, times(2)).ingest(drafts.capture());
+            ActivityEventDraft cancelled = drafts.getAllValues().get(0);
+            assertEquals(ActivityTypes.MAINTENANCE_SHIFT_CANCELLED, cancelled.type());
+            assertTrue(ActivityTypes.isKnown(cancelled.type()));
+            assertEquals(ActivitySeverity.WARNING, cancelled.severity(), "un turno cancelado es una posesion que no se hizo, como una orden cancelada");
+            assertEquals(Subject.of("shift", "90000000-0000-4000-8000-000000000001", "SH-000077"), cancelled.subject());
+            assertEquals(Actor.person("mantenimiento.responsable", "6f1b1c8e-0000-4000-8000-000000000032"), cancelled.actor());
+            assertEquals("CANCELLED", cancelled.payload().get("status"));
+            assertEquals("equipo.jefe", cancelled.payload().get("teamLeaderUsername"), "la dotacion de mto-resources viaja en el turno");
+            assertEquals("c0000000-0000-4000-8000-000000000002", cancelled.payload().get("supervisorPersonId"));
+            assertEquals(3, ((List<?>) cancelled.payload().get("linemanPersonIds")).size());
+            assertEquals(List.of("DR-02"), cancelled.payload().get("vehicleCodes"));
+            assertFalse(cancelled.payload().containsKey("actualEnd"), "un valor nulo no se guarda");
+
+            ActivityEventDraft closed = drafts.getAllValues().get(1);
+            assertEquals(ActivitySeverity.INFO, closed.severity(), "cerrar un turno es lo ordinario");
+            List<?> vehicles = (List<?>) closed.payload().get("vehicles");
+            assertEquals(1, vehicles.size());
+            Map<?, ?> vehicle = (Map<?, ?>) vehicles.getFirst();
+            assertEquals("DR-02", vehicle.get("code"));
+            Map<?, ?> parking = (Map<?, ?>) vehicle.get("parking");
+            assertEquals(31, ((Number) parking.get("trackId")).intValue(), "donde se dejo el vehiculo cabe en la profundidad del saneador");
+            assertEquals(4.25, ((Number) parking.get("kp")).doubleValue(), 0.0001);
         }
 
         @Test
@@ -1168,6 +1202,21 @@ class BusinessLayerTest {
             assertEquals("maintenance-shift", shift.ruleKey());
             assertEquals("Turno SH-000077 cerrado", shift.title());
             assertTrue(shift.body().contains("330 minutos netos"), shift.body());
+
+            NotificationFactory.NotificationDraft started = only.apply("shift-started");
+            assertEquals("maintenance-shift", started.ruleKey());
+            assertEquals("Turno SH-000077 iniciado", started.title());
+            assertEquals(ActivitySeverity.INFO, started.severity());
+
+            NotificationFactory.NotificationDraft shiftCancelled = only.apply("shift-cancelled");
+            assertEquals("maintenance-shift", shiftCancelled.ruleKey());
+            assertEquals(List.of(Audience.profile("mto-maintenance-manager")), shiftCancelled.audiences());
+            assertEquals(List.of("inbox"), shiftCancelled.channels());
+            assertEquals(ActivitySeverity.WARNING, shiftCancelled.severity(), "sin gravedad en la regla, la de la linea");
+            assertEquals("Turno SH-000077 cancelado", shiftCancelled.title());
+            assertEquals("mantenimiento.responsable ha cancelado el turno SH-000077 del 2026-09-29 (equipo EQ-1) en las vias 2, que ya habia empezado.",
+                    shiftCancelled.body());
+            assertEquals("/mantenimiento/turnos/90000000-0000-4000-8000-000000000001", shiftCancelled.link());
 
             for (String silent : List.of("defect-status-changed", "inspection-defect-created", "inspection-item-failed")) {
                 created.clear();

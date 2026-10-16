@@ -97,7 +97,7 @@ desactivaciones, contraseñas, credenciales y sesiones son `WARNING`.
 `X-Correlation-Id` de la petición (o el id del mensaje de datos maestros que la provocó), y el
 tipo sale del nombre del evento: `maintenance.order.created/status-changed/reassigned`,
 `maintenance.defect.created/status-changed`, `maintenance.inspection.created/item-failed/defect-created/corrective-order-created`,
-`maintenance.shift.started/closed`, `maintenance.material.rejected/failed/in-doubt`,
+`maintenance.shift.started/closed/cancelled`, `maintenance.material.rejected/failed/in-doubt`,
 `maintenance.asset.disabled` y `maintenance.preventive.due-soon`. El sujeto es la entidad con su
 código de etiqueta (`order`/`MO-000123`, `defect`/`DEF-000045`, `inspection`, `shift`, `asset`; la
 línea de material, por su orden y su material; los preventivos, por su fecha). Del `values` se
@@ -105,8 +105,9 @@ guarda todo: es el contrato del productor, que ya lo publica por lista blanca y 
 clave que huela a secreto, y el saneador del registro vuelve a pasarlo, así que una clave nueva
 allí no exige nada aquí. La gravedad es la del hecho: una orden urgente, un defecto crítico y una
 inspección insegura son `CRITICAL`; un defecto grave, una inspección con defecto mayor, un punto
-en `DEFECT`, una orden cancelada, un material que el almacén rechaza o no contesta, un activo
-desactivado y unos preventivos ya vencidos son `WARNING`. El aviso diario de preventivos llega con
+en `DEFECT`, una orden cancelada, un turno cancelado (la posesión que no se hizo, o que se dejó a
+medias), un material que el almacén rechaza o no contesta, un activo desactivado y unos
+preventivos ya vencidos son `WARNING`. El aviso diario de preventivos llega con
 actor `SYSTEM` y sin correlación, y su `operationId` sale de la fecha: el segundo del mismo día es
 un duplicado en el inbox. Un evento de ese exchange que este servicio aún no conoce se registra
 igualmente con su tipo y sus valores.
@@ -252,7 +253,7 @@ credencial. El actor es `SERVICE` cuando el cliente resuelto es `mto-users-svc`
 | `maintenance-defect-critical`, `maintenance-defect-high` | `maintenance.defect.created` con `severity` `CRITICAL` / `HIGH` | `mto-maintenance-manager` | bandeja y correo el crítico; bandeja el grave |
 | `maintenance-inspection-unsafe`, `maintenance-inspection-defect` | `maintenance.inspection.created` con `result` `UNSAFE` / `MAJOR_DEFECT` o `MINOR_DEFECT` | `mto-maintenance-manager` | bandeja y correo la insegura; bandeja las otras |
 | `maintenance-inspection-corrective-order` | `maintenance.inspection.corrective-order-created` | `mto-maintenance-manager` | bandeja |
-| `maintenance-shift` | `maintenance.shift.started`, `maintenance.shift.closed` | `mto-maintenance-manager` | bandeja |
+| `maintenance-shift` | `maintenance.shift.started`, `maintenance.shift.closed`, `maintenance.shift.cancelled` | `mto-maintenance-manager` | bandeja; el cancelado, `WARNING` |
 | `maintenance-material-no-stock` | `maintenance.material.rejected` con `stockErrorCode == STK-001` | `mto-maintenance-manager`, `mto-warehouse-admin` | bandeja |
 | `maintenance-material-rejected` | `maintenance.material.rejected` con otro código | `mto-maintenance-manager` | bandeja |
 | `maintenance-material-stock-unavailable` | `maintenance.material.failed`, `maintenance.material.in-doubt` | `mto-maintenance-manager` | bandeja; freno 1 h por orden |
