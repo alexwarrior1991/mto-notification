@@ -26,7 +26,8 @@
           "CRANE",
           "CREW_CABIN",
           "TOWING"
-        ]
+        ],
+        "requiredDriverQualification": "RR-OPERATOR"
       },
       "registrationPlate": "12-345-67",
       "railVehicleNumber": null,
@@ -35,10 +36,11 @@
       "active": true,
       "version": 0,
       "availabilityChanged": false,
-      "republished": false
+      "republished": false,
+      "documents": []
     }
   },
-  "messageHash": "05c03ae2db859167d1ecede06fbf40637e8297d5ccafa477e1c172ab9efc721d",
+  "messageHash": "495b133d89723eb2c552a345797a21bb55645d6b68dd5e99f54af46c1ef2871d",
   "actor": {
     "id": "6f1b1c8e-0000-4000-8000-000000000051",
     "username": "recursos.gestor",

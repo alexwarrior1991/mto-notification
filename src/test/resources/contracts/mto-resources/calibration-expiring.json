@@ -1,24 +1,24 @@
 {
-  "operationId": "d92c1ff4-0a7b-3487-984a-46d9fcba272d",
-  "referenceId": "calibration-ab000000-0000-4000-8000-000000000001",
+  "operationId": "bbad80aa-97d2-31a2-926f-a6a99d5e8510",
+  "referenceId": "calibration-a3000000-0000-4000-8000-000000000012",
   "origin": "mto-resources",
-  "creationDate": "2026-10-17T04:15:00Z",
+  "creationDate": "2026-10-16T09:00:00Z",
   "eventType": "RESOURCES_CALIBRATION_EXPIRING",
   "data": {
     "entityName": "calibration",
-    "entityId": "ab000000-0000-4000-8000-000000000001",
+    "entityId": "a3000000-0000-4000-8000-000000000012",
     "eventName": "expiring",
     "values": {
-      "instrumentId": "ab000000-0000-4000-8000-000000000001",
-      "code": "VD-03",
-      "name": "Voltage detector 25 kV",
-      "kind": "VOLTAGE_DETECTOR",
-      "serialNumber": "HT-25-0412",
-      "calibrationExpiresOn": "2026-11-05",
-      "daysLeft": 19
+      "instrumentId": "a3000000-0000-4000-8000-000000000012",
+      "code": "PT-012",
+      "name": "Earthing pole 25 kV",
+      "kind": "EARTHING_POLE",
+      "serialNumber": "EP25-88412",
+      "calibrationExpiresOn": "2026-10-30",
+      "daysLeft": 14
     }
   },
-  "messageHash": "409a387dcf869f0aede44ecaede803b5b29b5c2d2a22aff911c9ce5eb22a21b2",
+  "messageHash": "9e9b50bdfecd55fb5d9ac6018ef2dfc638d2d51549ada1a5c0bbac11f14ab9ed",
   "actor": {
     "id": null,
     "username": null,

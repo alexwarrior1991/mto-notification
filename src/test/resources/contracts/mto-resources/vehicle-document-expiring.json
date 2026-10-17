@@ -1,12 +1,12 @@
 {
-  "operationId": "5315b5ac-5434-3ac0-8c87-70bb1a9cf114",
-  "referenceId": "vehicle-document-ad000000-0000-4000-8000-000000000001",
+  "operationId": "bcb7a496-3ca2-3584-84ab-de66fb64ff98",
+  "referenceId": "vehicle-document-a2000000-0000-4000-8000-000000000002",
   "origin": "mto-resources",
-  "creationDate": "2026-10-17T04:15:00Z",
+  "creationDate": "2026-10-16T09:00:00Z",
   "eventType": "RESOURCES_VEHICLE_DOCUMENT_EXPIRING",
   "data": {
     "entityName": "vehicle-document",
-    "entityId": "ad000000-0000-4000-8000-000000000001",
+    "entityId": "a2000000-0000-4000-8000-000000000002",
     "eventName": "expiring",
     "values": {
       "vehicleId": "f0000000-0000-4000-8000-000000000007",
@@ -14,11 +14,11 @@
       "vehicleName": "Unimog 7",
       "kind": "ROAD_INSPECTION",
       "reference": "ITV-2026-118",
-      "expiresOn": "2026-11-10",
-      "daysLeft": 24
+      "expiresOn": "2026-11-01",
+      "daysLeft": 16
     }
   },
-  "messageHash": "8223d2067b4171f79b0054ebba92fa6e04f629ffcfc6bb126de5ca100884264c",
+  "messageHash": "78720a9f93bc84d0e880f8b214f7738d4d7bc7122ff2951819015f7f5cc8ba03",
   "actor": {
     "id": null,
     "username": null,

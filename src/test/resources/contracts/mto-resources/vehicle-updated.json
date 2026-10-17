@@ -26,7 +26,8 @@
           "CRANE",
           "CREW_CABIN",
           "TOWING"
-        ]
+        ],
+        "requiredDriverQualification": "RR-OPERATOR"
       },
       "registrationPlate": "12-345-67",
       "railVehicleNumber": null,
@@ -35,10 +36,22 @@
       "active": true,
       "version": 1,
       "availabilityChanged": true,
-      "republished": false
+      "republished": false,
+      "documents": [
+        {
+          "kind": "INSURANCE",
+          "reference": "POL-55120",
+          "expiresOn": "2026-12-31"
+        },
+        {
+          "kind": "ROAD_INSPECTION",
+          "reference": "ITV-2026-118",
+          "expiresOn": "2027-02-28"
+        }
+      ]
     }
   },
-  "messageHash": "02f76f3a20e9407beedd71d38423b608c335157cbda76d5a14ff6ffe28b07a92",
+  "messageHash": "f2adf28dce78d2c254aa813fc45a52d7fa684acbc37a4227c3769e5dbbe28471",
   "actor": {
     "id": "6f1b1c8e-0000-4000-8000-000000000051",
     "username": "recursos.gestor",

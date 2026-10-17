@@ -20,10 +20,18 @@
       "company": null,
       "active": false,
       "version": 2,
-      "republished": false
+      "republished": false,
+      "qualifications": [
+        {
+          "code": "LIC-B",
+          "kind": "DRIVING_LICENCE",
+          "drivingLicence": "B",
+          "expiresOn": null
+        }
+      ]
     }
   },
-  "messageHash": "676c330e58e1b040d7cb5dee34ec776f1a69015c0d7984ab7e8868e2e5788336",
+  "messageHash": "dd61c315afe74e749b4a846b03cfecc4c92196a35cf11a9163cb0a375301599f",
   "actor": {
     "id": "6f1b1c8e-0000-4000-8000-000000000051",
     "username": "recursos.gestor",

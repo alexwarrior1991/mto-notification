@@ -1870,14 +1870,14 @@ class BusinessLayerTest {
             });
 
             ActivityEventDraft expiring = byName.get("qualification-expiring");
-            assertEquals(Subject.of("qualification", "a0000000-0000-4000-8000-000000000001", "PER-000010 Eli Katz · RAIL-DRIVER"), expiring.subject(),
+            assertEquals(Subject.of("qualification", "a1000000-0000-4000-8000-000000000010", "PER-000010 Eli Katz · RAIL-DRIVER"), expiring.subject(),
                     "la fila de la cualificacion, con la persona y el codigo de la cualificacion");
             assertEquals(Actor.system(), expiring.actor(), "el vigilante diario no tiene persona detras");
             assertNull(expiring.correlationId(), "ni peticion");
-            assertEquals("8bc5a989-1327-3f88-8bf1-4ab7ae453e99", expiring.sourceEventId(), "una vez por fecha de caducidad: el operationId derivado");
+            assertEquals("623b9ffc-7df4-3060-b23b-af02ec4da882", expiring.sourceEventId(), "una vez por fecha de caducidad: el operationId derivado");
             assertEquals("c0000000-0000-4000-8000-000000000010", expiring.payload().get("personId"));
             assertEquals("equipo.operario", expiring.payload().get("username"));
-            assertEquals(29, ((Number) expiring.payload().get("daysLeft")).intValue());
+            assertEquals(30, ((Number) expiring.payload().get("daysLeft")).intValue());
             assertEquals("equipo.jefe", ((Map<?, ?>) expiring.payload().get("leader")).get("username"), "el jefe de su equipo, a quien tambien se avisa");
 
             ActivityEventDraft expired = byName.get("qualification-expired");
@@ -1885,20 +1885,20 @@ class BusinessLayerTest {
             assertNull(expired.payload().get("leader"), "la persona es el jefe de su equipo: no hay otro jefe a quien avisar");
             assertEquals(-1, ((Number) expired.payload().get("daysLeft")).intValue(), "caducada ayer");
 
-            assertEquals(Subject.of("vehicle-document", "ad000000-0000-4000-8000-000000000001", "RR-07 · ROAD_INSPECTION"),
+            assertEquals(Subject.of("vehicle-document", "a2000000-0000-4000-8000-000000000002", "RR-07 · ROAD_INSPECTION"),
                     byName.get("vehicle-document-expiring").subject(), "el documento, por el vehiculo y su tipo");
             assertEquals("f0000000-0000-4000-8000-000000000007", byName.get("vehicle-document-expiring").payload().get("vehicleId"));
-            assertEquals("RR-07 · CRANE_CERTIFICATE", byName.get("vehicle-document-expired").subject().label());
-            assertEquals(Subject.of("calibration", "ab000000-0000-4000-8000-000000000001", "VD-03 Voltage detector 25 kV"),
+            assertEquals("RR-07 · INSURANCE", byName.get("vehicle-document-expired").subject().label());
+            assertEquals(Subject.of("calibration", "a3000000-0000-4000-8000-000000000012", "PT-012 Earthing pole 25 kV"),
                     byName.get("calibration-expiring").subject(), "la calibracion, por el instrumento: su id es el del instrumento");
-            assertEquals("MS-02 Contact wire gauge 2", byName.get("calibration-expired").subject().label());
+            assertEquals("DT-03 Voltage detector 25 kV", byName.get("calibration-expired").subject().label());
 
             ActivityEventDraft created = byName.get("instrument-created");
-            assertEquals(Subject.of("instrument", "ab000000-0000-4000-8000-000000000001", "VD-03 Voltage detector 25 kV"), created.subject());
+            assertEquals(Subject.of("instrument", "a3000000-0000-4000-8000-000000000012", "PT-012 Earthing pole 25 kV"), created.subject());
             assertEquals(Actor.person("recursos.gestor", "6f1b1c8e-0000-4000-8000-000000000051"), created.actor());
             assertEquals("8c3b8c1a-1111-4222-8333-555555555555", created.correlationId());
-            assertEquals("2026-11-05", created.payload().get("calibrationExpiresOn"));
-            assertEquals("HT-25-0412", created.payload().get("serialNumber"));
+            assertEquals("2027-03-31", created.payload().get("calibrationExpiresOn"));
+            assertEquals("EP25-88412", created.payload().get("serialNumber"));
             assertEquals(Boolean.FALSE, byName.get("instrument-deactivated").payload().get("active"));
 
             assertEquals("PER-000010 · RAIL-DRIVER", ResourcesSourceAdapter.label("qualification",
@@ -1942,7 +1942,7 @@ class BusinessLayerTest {
             assertEquals(List.of("inbox"), soon.channels(), "lo que aun no ha caducado no va al correo");
             assertEquals(ActivitySeverity.WARNING, soon.severity(), "sin gravedad en la regla, la de la linea");
             assertEquals("Cualificacion RAIL-DRIVER de Eli Katz a punto de caducar", soon.title());
-            assertEquals("La cualificacion RAIL-DRIVER (Rail auxiliary vehicle driver) de PER-000010 Eli Katz (equipo A) caduca el 2026-11-15, en 29 dias. "
+            assertEquals("La cualificacion RAIL-DRIVER (Rail auxiliary vehicle driver) de PER-000010 Eli Katz (equipo A) caduca el 2026-11-15, en 30 dias. "
                     + "Con ella caducada no entra en ningun turno: hay que renovarla antes.", soon.body());
             assertEquals("/recursos/personal/c0000000-0000-4000-8000-000000000010", soon.link());
             assertEquals("qualification", soon.subjectType());
@@ -1956,7 +1956,7 @@ class BusinessLayerTest {
             assertEquals(List.of("inbox", "email"), expired.channels(), "lo caducado llega tambien al correo");
             assertEquals(ActivitySeverity.CRITICAL, expired.severity());
             assertEquals("Cualificacion LIC-C de Yossi Cohen caducada", expired.title());
-            assertEquals("La cualificacion LIC-C (Driving licence C) de PER-000003 Yossi Cohen (equipo A) caduco el 2026-10-16: hasta que se renueve no entra en ningun turno.",
+            assertEquals("La cualificacion LIC-C (Driving licence C) de PER-000003 Yossi Cohen (equipo A) caduco el 2026-10-15: hasta que se renueve no entra en ningun turno.",
                     expired.body());
             assertEquals("/recursos/personal/c0000000-0000-4000-8000-000000000003", expired.link());
 
@@ -1992,7 +1992,7 @@ class BusinessLayerTest {
             assertEquals(List.of("inbox"), documentSoon.channels());
             assertEquals(ActivitySeverity.WARNING, documentSoon.severity());
             assertEquals("Documento ROAD_INSPECTION del vehiculo RR-07 a punto de caducar", documentSoon.title());
-            assertEquals("El documento ROAD_INSPECTION ITV-2026-118 del vehiculo RR-07 (Unimog 7) caduca el 2026-11-10, en 24 dias. "
+            assertEquals("El documento ROAD_INSPECTION ITV-2026-118 del vehiculo RR-07 (Unimog 7) caduca el 2026-11-01, en 16 dias. "
                     + "Con el caducado, el vehiculo no entra en ningun turno: hay que renovarlo antes.", documentSoon.body());
             assertEquals("/recursos/flota/f0000000-0000-4000-8000-000000000007", documentSoon.link());
 
@@ -2001,8 +2001,8 @@ class BusinessLayerTest {
             assertEquals(fleetManagers, documentExpired.audiences());
             assertEquals(List.of("inbox", "email"), documentExpired.channels());
             assertEquals(ActivitySeverity.CRITICAL, documentExpired.severity());
-            assertEquals("Documento CRANE_CERTIFICATE del vehiculo RR-07 caducado", documentExpired.title());
-            assertEquals("El documento CRANE_CERTIFICATE CRN-2025-031 del vehiculo RR-07 (Unimog 7) caduco el 2026-10-16: hasta que se renueve, el vehiculo no entra en ningun turno.",
+            assertEquals("Documento INSURANCE del vehiculo RR-07 caducado", documentExpired.title());
+            assertEquals("El documento INSURANCE POL-55120 del vehiculo RR-07 (Unimog 7) caduco el 2026-10-14: hasta que se renueve, el vehiculo no entra en ningun turno.",
                     documentExpired.body());
             assertEquals("/recursos/flota/f0000000-0000-4000-8000-000000000007", documentExpired.link());
 
@@ -2022,8 +2022,8 @@ class BusinessLayerTest {
                     .get("resources-calibration-expiring");
             assertEquals(fleetManagers, calibrationSoon.audiences());
             assertEquals(List.of("inbox"), calibrationSoon.channels());
-            assertEquals("Calibracion del instrumento VD-03 a punto de caducar", calibrationSoon.title());
-            assertEquals("La calibracion del instrumento VD-03 (Voltage detector 25 kV, VOLTAGE_DETECTOR, n/s HT-25-0412) caduca el 2026-11-05, en 19 dias. "
+            assertEquals("Calibracion del instrumento PT-012 a punto de caducar", calibrationSoon.title());
+            assertEquals("La calibracion del instrumento PT-012 (Earthing pole 25 kV, EARTHING_POLE, n/s EP25-88412) caduca el 2026-10-30, en 14 dias. "
                     + "Con la calibracion caducada, el instrumento no entra en ningun turno: hay que calibrarlo antes.", calibrationSoon.body());
             assertEquals("/recursos/instrumentos", calibrationSoon.link());
 
@@ -2032,8 +2032,8 @@ class BusinessLayerTest {
             assertEquals(fleetManagers, calibrationExpired.audiences());
             assertEquals(List.of("inbox", "email"), calibrationExpired.channels());
             assertEquals(ActivitySeverity.CRITICAL, calibrationExpired.severity());
-            assertEquals("Calibracion del instrumento MS-02 caducada", calibrationExpired.title());
-            assertEquals("La calibracion del instrumento MS-02 (Contact wire gauge 2, MEASURING, n/s CWG-7781) caduco el 2026-10-16: "
+            assertEquals("Calibracion del instrumento DT-03 caducada", calibrationExpired.title());
+            assertEquals("La calibracion del instrumento DT-03 (Voltage detector 25 kV, VOLTAGE_DETECTOR, n/s VD-7731) caduco el 2026-10-12: "
                     + "hasta que se calibre de nuevo, el instrumento no entra en ningun turno.", calibrationExpired.body());
             assertEquals("/recursos/instrumentos", calibrationExpired.link());
 

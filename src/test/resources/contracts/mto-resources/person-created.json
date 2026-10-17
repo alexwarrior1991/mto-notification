@@ -20,10 +20,11 @@
       "company": null,
       "active": true,
       "version": 0,
-      "republished": false
+      "republished": false,
+      "qualifications": []
     }
   },
-  "messageHash": "98fb804b5dea8238a83eb2f7a76ccaa62d86321a53e1f8b833b31cb8ea698824",
+  "messageHash": "4f3131d07850b5eca03e05d463eb7f3ae92cf870030dc3b532569c833347a91e",
   "actor": {
     "id": "6f1b1c8e-0000-4000-8000-000000000051",
     "username": "recursos.gestor",

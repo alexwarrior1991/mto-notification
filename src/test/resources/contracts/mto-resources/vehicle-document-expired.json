@@ -1,24 +1,24 @@
 {
-  "operationId": "80ed5abc-b652-385e-98fa-1a9840a9d297",
-  "referenceId": "vehicle-document-ad000000-0000-4000-8000-000000000002",
+  "operationId": "a29f1777-8d09-326d-8769-21fc0c87cdc0",
+  "referenceId": "vehicle-document-a2000000-0000-4000-8000-000000000001",
   "origin": "mto-resources",
-  "creationDate": "2026-10-17T04:15:00Z",
+  "creationDate": "2026-10-16T09:00:00Z",
   "eventType": "RESOURCES_VEHICLE_DOCUMENT_EXPIRED",
   "data": {
     "entityName": "vehicle-document",
-    "entityId": "ad000000-0000-4000-8000-000000000002",
+    "entityId": "a2000000-0000-4000-8000-000000000001",
     "eventName": "expired",
     "values": {
       "vehicleId": "f0000000-0000-4000-8000-000000000007",
       "vehicleCode": "RR-07",
       "vehicleName": "Unimog 7",
-      "kind": "CRANE_CERTIFICATE",
-      "reference": "CRN-2025-031",
-      "expiresOn": "2026-10-16",
-      "daysLeft": -1
+      "kind": "INSURANCE",
+      "reference": "POL-55120",
+      "expiresOn": "2026-10-14",
+      "daysLeft": -2
     }
   },
-  "messageHash": "daff9fe809b3f664d066b5ccea2ede69ddb54e994c0e0c0648913efd1ea9a4a3",
+  "messageHash": "ccb8400053bbb23ff02ff3cddb5950264ad97a4392d4e0d0e4b4eddc28f3a9ce",
   "actor": {
     "id": null,
     "username": null,

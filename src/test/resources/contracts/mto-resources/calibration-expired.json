@@ -1,24 +1,24 @@
 {
-  "operationId": "147e3aad-c3b7-3ac9-8183-b80c2798bf54",
-  "referenceId": "calibration-ab000000-0000-4000-8000-000000000002",
+  "operationId": "33f734c4-8dbe-3f29-a9c3-736e00b2a1be",
+  "referenceId": "calibration-a3000000-0000-4000-8000-000000000003",
   "origin": "mto-resources",
-  "creationDate": "2026-10-17T04:15:00Z",
+  "creationDate": "2026-10-16T09:00:00Z",
   "eventType": "RESOURCES_CALIBRATION_EXPIRED",
   "data": {
     "entityName": "calibration",
-    "entityId": "ab000000-0000-4000-8000-000000000002",
+    "entityId": "a3000000-0000-4000-8000-000000000003",
     "eventName": "expired",
     "values": {
-      "instrumentId": "ab000000-0000-4000-8000-000000000002",
-      "code": "MS-02",
-      "name": "Contact wire gauge 2",
-      "kind": "MEASURING",
-      "serialNumber": "CWG-7781",
-      "calibrationExpiresOn": "2026-10-16",
-      "daysLeft": -1
+      "instrumentId": "a3000000-0000-4000-8000-000000000003",
+      "code": "DT-03",
+      "name": "Voltage detector 25 kV",
+      "kind": "VOLTAGE_DETECTOR",
+      "serialNumber": "VD-7731",
+      "calibrationExpiresOn": "2026-10-12",
+      "daysLeft": -4
     }
   },
-  "messageHash": "adb284120e6bc4d3faae7b00f08c36129bbaf47ec5a5f6b46a4c38e7c852e1af",
+  "messageHash": "9029f89fb5a630d168f7d8589039094a9f555d4599995061e4649b6192e2b3f4",
   "actor": {
     "id": null,
     "username": null,

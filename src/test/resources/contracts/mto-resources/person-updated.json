@@ -20,10 +20,24 @@
       "company": null,
       "active": true,
       "version": 1,
-      "republished": false
+      "republished": false,
+      "qualifications": [
+        {
+          "code": "LIC-C",
+          "kind": "DRIVING_LICENCE",
+          "drivingLicence": "C",
+          "expiresOn": "2031-06-14"
+        },
+        {
+          "code": "RAIL-DRIVER",
+          "kind": "VEHICLE_OPERATION",
+          "drivingLicence": null,
+          "expiresOn": "2027-03-31"
+        }
+      ]
     }
   },
-  "messageHash": "fa00b457cfdc019ad9896e9fc246e11439c60f669d781fdce71943a0e49f644e",
+  "messageHash": "198c0862a386cebe9cb6fb5a62307f98b1296932459a8a9d08930df3c180e9e7",
   "actor": {
     "id": "6f1b1c8e-0000-4000-8000-000000000051",
     "username": "recursos.gestor",
