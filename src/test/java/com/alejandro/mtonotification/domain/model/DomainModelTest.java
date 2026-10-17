@@ -29,6 +29,7 @@ class DomainModelTest {
         assertEquals(ActivityCategory.ACCESS, ActivityCategory.ofType(ActivityTypes.ACCESS_LOGIN_STREAK));
         assertEquals(ActivityCategory.CONFIGURATION, ActivityCategory.ofType(ActivityTypes.masterDataType("profile", "updated")));
         assertTrue(ActivityTypes.isKnown("configuration.section-insulator.deleted"));
+        assertTrue(ActivityTypes.isKnown("configuration.track-access-point.updated"), "el punto de acceso a la via, V28 de mto-configuration");
         assertEquals(ActivityCategory.RESOURCES, ActivityCategory.ofType(ActivityTypes.RESOURCES_VEHICLE_UPDATED));
         assertTrue(ActivityTypes.isKnown("resources.team.deactivated"));
     }

@@ -186,6 +186,11 @@ class MessagingLayerTest {
         assertEquals("UPDATED", steadyArm.data().get("operation"));
         assertEquals("config.editor", steadyArm.actor().username());
 
+        SourceEnvelope accessPoint = convert(fixture("contracts/mto-configuration/master-data-track-access-point-updated.json"));
+        assertEquals("track-access-point", accessPoint.data().get("entityName"));
+        assertEquals("UPDATED", accessPoint.data().get("operation"));
+        assertEquals("MASTER_DATA_TRACK_ACCESS_POINT_UPDATED", accessPoint.eventType());
+
         SourceEnvelope userCreated = convert(fixture("contracts/mto-users/user-created.json"));
         assertEquals("mto-users", userCreated.origin());
         assertEquals("USERS_USER_CREATED", userCreated.eventType());

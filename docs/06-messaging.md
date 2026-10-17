@@ -59,7 +59,9 @@ diez minutos: la ráfaga de un trabajo solo se cierra cuando deja de recibir eve
 tope de 4 h (`app.notification.burst.correlated-max-window`), y el corte a los 10 min
 (`max-window`) queda para las que no traen `correlationId`. Las reglas: una ráfaga de 50 o más avisa
 a `mto-maintenance-manager` y `mto-ops`; una baja de infraestructura, además por correo; un
-paquete nuevo, a mantenimiento y almacén.
+paquete nuevo, a mantenimiento y almacén. El punto de acceso a la vía (`track-access-point`, `V28` de
+`mto-configuration`, la novena entidad del canal) se registra como las demás, por ráfaga, también su
+baja: lo consume `mto-resources`, y aquí no tiene regla propia.
 
 ### Trabajos de `mto-configuration`
 

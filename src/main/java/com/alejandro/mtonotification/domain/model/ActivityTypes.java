@@ -136,10 +136,14 @@ public final class ActivityTypes {
     public static final String SYSTEM_SOURCE_STALLED = "system.source.stalled";
     public static final String SYSTEM_DELIVERY_DEAD = "system.delivery.dead";
 
-    /** Las ocho entidades de datos maestros que publica mto-configuration; sus tipos son {@code configuration.<entidad>.<operacion>}. */
+    /**
+     * Las nueve entidades de datos maestros que publica mto-configuration; sus tipos son
+     * {@code configuration.<entidad>.<operacion>}. El punto de acceso a la via ({@code track-access-point},
+     * V28 de mto-configuration) es la novena.
+     */
     public static final Set<String> MASTER_DATA_ENTITIES = Set.of(
             "execution-package", "station", "track", "profile",
-            "cantilever", "steady-arm", "disconnector", "section-insulator");
+            "cantilever", "steady-arm", "disconnector", "section-insulator", "track-access-point");
 
     public static final Set<String> MASTER_DATA_OPERATIONS = Set.of("created", "updated", "deleted");
 

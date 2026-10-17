@@ -375,6 +375,17 @@ class BusinessLayerTest {
         }
 
         @Test
+        void anAccessPointOfATrackIsAMasterDataEntityAndItsChangesGoToABurst() {
+            adapter.handle(fixture("contracts/mto-configuration/master-data-track-access-point-updated.json"), context);
+            verify(bursts).record(eq("mto-configuration"), eq("track-access-point"), eq("updated"), eq(Actor.person("config.editor",
+                    "6f1b1c8e-0000-4000-8000-000000000001")), eq("5d2e7f10-2222-4333-8444-555555555555"), eq("77"),
+                    eq(Instant.parse("2026-10-17T07:00:00Z")));
+            assertTrue(ActivityTypes.isKnown(ActivityTypes.masterDataType("track-access-point", "deleted")));
+            assertFalse(adapter.isDirect("track-access-point", "deleted"), "la baja de un acceso no es una baja de infraestructura de mantenimiento");
+            verify(ingestor, never()).ingest(any());
+        }
+
+        @Test
         void aDeletedCantileverIsAggregatedAndAnUnknownOperationIsPermanent() {
             adapter.handle(envelope("cantilever", "deleted", null, null), context);
             verify(bursts).record(eq("mto-configuration"), eq("cantilever"), eq("deleted"), any(), any(), eq("42"), any());
