@@ -79,6 +79,9 @@ class RulesConfigurationTest {
         NotificationRule stockUnavailable = repository.rules().stream().filter(rule -> rule.key().equals("maintenance-material-stock-unavailable")).findFirst().orElseThrow();
         assertEquals(Duration.ofHours(1), stockUnavailable.throttle().window(), "el almacen caido avisa una vez por orden y hora");
         assertTrue(stockUnavailable.matcher().matches(ActivityTypes.MAINTENANCE_MATERIAL_IN_DOUBT));
+        NotificationRule shift = repository.rules().stream().filter(rule -> rule.key().equals("maintenance-shift")).findFirst().orElseThrow();
+        assertTrue(shift.matcher().matches(ActivityTypes.MAINTENANCE_SHIFT_CANCELLED), "un turno cancelado avisa como uno iniciado o cerrado");
+        assertTrue(shift.matcher().matches(ActivityTypes.MAINTENANCE_SHIFT_STARTED) && shift.matcher().matches(ActivityTypes.MAINTENANCE_SHIFT_CLOSED));
 
         NotificationRule belowMinimum = repository.rules().stream().filter(rule -> rule.key().equals("stock-material-below-minimum")).findFirst().orElseThrow();
         assertEquals(Duration.ofHours(24), belowMinimum.throttle().window(), "un material bajo minimo avisa una vez al dia");

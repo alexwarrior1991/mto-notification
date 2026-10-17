@@ -286,12 +286,14 @@ rules:
     body: "#{event.actorUsername ?: 'Un proceso'} ha generado la orden #{payload.orderType} #{payload.orderCode} (prioridad #{payload.priority}) desde la inspeccion #{payload.code} sobre #{payload.assetCode}#{payload.defectCode != null ? ', por el defecto ' + payload.defectCode : ''}."
     link: "/mantenimiento/ordenes/#{payload.orderId}"
 
+  # Un turno cancelado sale con la gravedad de su linea (WARNING): la posesion no se hizo, o se
+  # dejo a medias si ya habia empezado.
   - key: maintenance-shift
-    event: [maintenance.shift.started, maintenance.shift.closed]
+    event: [maintenance.shift.started, maintenance.shift.closed, maintenance.shift.cancelled]
     audiences: [PROFILE:mto-maintenance-manager]
     channels: [inbox]
-    title: "Turno #{payload.code} #{event.type == 'maintenance.shift.started' ? 'iniciado' : 'cerrado'}"
-    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'maintenance.shift.started' ? 'iniciado' : 'cerrado'} el turno #{payload.code} del #{payload.shiftDate}#{payload.teamCode != null ? ' (equipo ' + payload.teamCode + ')' : ''} en las vias #{payload.trackIds}#{event.type == 'maintenance.shift.closed' and payload.netWorkMinutes != null ? ': ' + payload.netWorkMinutes + ' minutos netos' : ''}."
+    title: "Turno #{payload.code} #{event.type == 'maintenance.shift.started' ? 'iniciado' : (event.type == 'maintenance.shift.closed' ? 'cerrado' : 'cancelado')}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'maintenance.shift.started' ? 'iniciado' : (event.type == 'maintenance.shift.closed' ? 'cerrado' : 'cancelado')} el turno #{payload.code} del #{payload.shiftDate}#{payload.teamCode != null ? ' (equipo ' + payload.teamCode + ')' : ''} en las vias #{payload.trackIds}#{event.type == 'maintenance.shift.closed' and payload.netWorkMinutes != null ? ': ' + payload.netWorkMinutes + ' minutos netos' : ''}#{event.type == 'maintenance.shift.cancelled' and payload.actualStart != null ? ', que ya habia empezado' : ''}."
     link: "/mantenimiento/turnos/#{event.subjectId}"
 
   - key: maintenance-material-no-stock

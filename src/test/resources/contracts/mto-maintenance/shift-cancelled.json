@@ -1,0 +1,64 @@
+{
+  "operationId": "a0000000-0000-4000-8000-000000000012",
+  "referenceId": "shift-90000000-0000-4000-8000-000000000001",
+  "origin": "mto-maintenance",
+  "creationDate": "2026-09-29T09:00:00Z",
+  "eventType": "MAINTENANCE_SHIFT_CANCELLED",
+  "data": {
+    "entityName": "shift",
+    "entityId": "90000000-0000-4000-8000-000000000001",
+    "eventName": "cancelled",
+    "values": {
+      "code": "SH-000077",
+      "status": "CANCELLED",
+      "shiftDate": "2026-09-29",
+      "possessionType": "PARTIAL",
+      "teamId": "30000000-0000-4000-8000-000000000001",
+      "teamCode": "EQ-1",
+      "teamName": "Equipo noche 1",
+      "baseName": "Base Herzliya",
+      "vehicle": "Dresina 3",
+      "trackIds": [
+        2
+      ],
+      "executionPackageId": 6,
+      "startKp": 12847.990,
+      "endKp": 14078.090,
+      "plannedStart": "2026-09-29T22:00:00Z",
+      "plannedEnd": "2026-09-30T04:00:00Z",
+      "actualStart": "2026-09-29T22:05:00Z",
+      "actualEnd": null,
+      "voltageCutoffAt": null,
+      "netWorkMinutes": null,
+      "parkingPlace": "Herzliya siding",
+      "vehicles": [
+        {
+          "id": "f0000000-0000-4000-8000-000000000002",
+          "code": "DR-02",
+          "parking": null
+        }
+      ],
+      "vehicleIds": [
+        "f0000000-0000-4000-8000-000000000002"
+      ],
+      "vehicleCodes": [
+        "DR-02"
+      ],
+      "teamLeaderPersonId": "c0000000-0000-4000-8000-000000000003",
+      "teamLeaderUsername": "equipo.jefe",
+      "supervisorPersonId": "c0000000-0000-4000-8000-000000000002",
+      "linemanPersonIds": [
+        "c0000000-0000-4000-8000-000000000010",
+        "c0000000-0000-4000-8000-000000000011",
+        "c0000000-0000-4000-8000-000000000012"
+      ]
+    }
+  },
+  "messageHash": "a1239239e0692484072da701eccc23173fc6456a9f6ae052a49bc4a79b51086d",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000032",
+    "username": "mantenimiento.responsable",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-444444444444"
+}

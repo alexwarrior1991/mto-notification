@@ -209,6 +209,20 @@ class MessagingLayerTest {
         assertEquals(12847.99, ((Number) orderValues.get("startKp")).doubleValue(), 0.0001);
         assertNull(orderValues.get("stationId"), "un valor nulo viaja como nulo");
 
+        SourceEnvelope shiftCancelled = convert(fixture("contracts/mto-maintenance/shift-cancelled.json"));
+        assertEquals("MAINTENANCE_SHIFT_CANCELLED", shiftCancelled.eventType());
+        assertEquals("shift", shiftCancelled.data().get("entityName"));
+        assertEquals("cancelled", shiftCancelled.data().get("eventName"));
+        assertEquals("mantenimiento.responsable", shiftCancelled.actor().username());
+        @SuppressWarnings("unchecked") Map<String, Object> shiftValues = (Map<String, Object>) shiftCancelled.data().get("values");
+        assertEquals("CANCELLED", shiftValues.get("status"));
+        assertEquals("equipo.jefe", shiftValues.get("teamLeaderUsername"), "la dotacion de mto-resources viaja en el turno");
+        assertEquals(List.of("f0000000-0000-4000-8000-000000000002"), shiftValues.get("vehicleIds"));
+        assertEquals(3, ((List<?>) shiftValues.get("linemanPersonIds")).size());
+        Map<?, ?> shiftVehicle = (Map<?, ?>) ((List<?>) shiftValues.get("vehicles")).getFirst();
+        assertEquals("DR-02", shiftVehicle.get("code"));
+        assertNull(shiftVehicle.get("parking"), "un vehiculo sin aparcar viaja con su sitio a nulo");
+
         SourceEnvelope dueSoon = convert(fixture("contracts/mto-maintenance/preventive-due-soon.json"));
         assertEquals("SYSTEM", dueSoon.actor().kind(), "el trabajo diario no tiene persona detras");
         assertNull(dueSoon.correlationId());
