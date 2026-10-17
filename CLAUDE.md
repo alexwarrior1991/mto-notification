@@ -142,7 +142,8 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
   un vehículo que deja de estar disponible → `WARNING`); lo que `mto-resources` republica
   (`republished: true`) no se registra; las reglas leen
   `payload.type`, `payload.to`, `payload.assignedUser`, `payload.stockErrorCode`,
-  `payload.createdBy`, `payload.direction`, `payload.accepted`, `payload.allClear`... y
+  `payload.createdBy`, `payload.direction`, `payload.accepted`, `payload.allClear`,
+  `payload.teamLeaderUsername`, `payload.leader?.username`, `payload.availabilityChanged`... y
   las variables `maintenance-service-account` y `large-adjustment-threshold`.
 - **Un cambio hecho desde `mto-users` se registra una vez con nombre**: su evento (con la persona)
   y el de administración de Keycloak del mismo cambio (con `mto-users-svc`) se funden marcando el
@@ -169,7 +170,7 @@ Una clase por capa; se añaden métodos, no clases: `DomainModelTest`, `RulesCon
 YAML real carga; una regla rota impide arrancar), `BusinessLayerTest` (motor, ingesta, detector de
 rachas, datos maestros, los trabajos de configuración, las acciones de `mto-users` y los eventos de
 `mto-maintenance`, de `mto-stock`, de `mto-field` y de `mto-resources` con los ejemplos de `src/test/resources/contracts`,
-las reglas de mantenimiento, de almacén y de campo enviadas pasando por el motor real, el correlador, adaptadores y lector
+las reglas de mantenimiento, de almacén, de campo y de recursos enviadas pasando por el motor real, el correlador, adaptadores y lector
 de Keycloak, despachador y resolutor, y el filtro de IP de los accesos, que nunca consulta el DNS;
 con dobles), `MessagingLayerTest` (el JSON literal de `mto-configuration`
 y los ejemplos de cada productor, consumidor, inbox, firma y topología de las siete fuentes con

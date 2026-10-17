@@ -271,6 +271,7 @@ credencial. El actor es `SERVICE` cuando el cliente resuelto es `mto-users-svc`
 | `maintenance-inspection-unsafe`, `maintenance-inspection-defect` | `maintenance.inspection.created` con `result` `UNSAFE` / `MAJOR_DEFECT` o `MINOR_DEFECT` | `mto-maintenance-manager` | bandeja y correo la insegura; bandeja las otras |
 | `maintenance-inspection-corrective-order` | `maintenance.inspection.corrective-order-created` | `mto-maintenance-manager` | bandeja |
 | `maintenance-shift` | `maintenance.shift.started`, `maintenance.shift.closed`, `maintenance.shift.cancelled` | `mto-maintenance-manager` | bandeja; el cancelado, `WARNING` |
+| `maintenance-shift-team-leader` | los mismos, con `teamLeaderUsername` (un turno con dotación de `mto-resources`) y hechos por otra persona | `USER:#{payload.teamLeaderUsername}`, el jefe del turno | bandeja |
 | `maintenance-material-no-stock` | `maintenance.material.rejected` con `stockErrorCode == STK-001` | `mto-maintenance-manager`, `mto-warehouse-admin` | bandeja |
 | `maintenance-material-rejected` | `maintenance.material.rejected` con otro código | `mto-maintenance-manager` | bandeja |
 | `maintenance-material-stock-unavailable` | `maintenance.material.failed`, `maintenance.material.in-doubt` | `mto-maintenance-manager` | bandeja; freno 1 h por orden |
@@ -285,6 +286,9 @@ credencial. El actor es `SERVICE` cuando el cliente resuelto es `mto-users-svc`
 | `field-evacuation-complete` | `field.possession.evacuation-acknowledged` con `allAcknowledged` | `mto-field-supervisor` | bandeja |
 | `field-evacuation-unacknowledged` | `field.possession.evacuation-unacknowledged` (el vigilante de `mto-field`, una vez por orden) | `mto-field-supervisor`, `mto-maintenance-manager` | bandeja, correo; `CRITICAL` |
 | `field-all-clear` | `field.possession.clear-of-track` con `allClear` | `mto-field-supervisor`, `mto-maintenance-manager` | bandeja |
+| `resources-team-changed` | `resources.team.updated`, `resources.team.deactivated` hechos por otra persona que el jefe | `USER:#{payload.leader?.username}`, el jefe del equipo | bandeja; enlaza a su unidad del organigrama |
+| `resources-team-deactivated` | `resources.team.deactivated` | `mto-resources-manager`, `mto-resources-admin` y, si es de `MAINTENANCE`, `mto-maintenance-manager` | bandeja |
+| `resources-vehicle-unavailable` | `resources.vehicle.updated` o `deactivated` con `availabilityChanged` y `available == false` | `mto-maintenance-manager`, `mto-resources-manager`, `mto-resources-admin` | bandeja; enlaza a la ficha del vehículo |
 | `system-source-stalled`, `system-delivery-dead` | los eventos del propio servicio | `mto-ops` | bandeja, correo |
 
 Registro sin aviso: `access.login`, `access.logout`, las ráfagas pequeñas, `users.user.updated`,

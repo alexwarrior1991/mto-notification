@@ -1198,18 +1198,33 @@ class BusinessLayerTest {
             assertEquals(List.of("inbox", "email"), dueSoon.channels());
             assertEquals("/mantenimiento/activos", dueSoon.link());
 
-            NotificationFactory.NotificationDraft shift = only.apply("shift-closed");
-            assertEquals("maintenance-shift", shift.ruleKey());
+            // Un turno con dotacion avisa tambien a su jefe cuando otra persona lo inicia, lo cierra o lo cancela.
+            java.util.function.Function<String, Map<String, NotificationFactory.NotificationDraft>> byRule = name -> {
+                created.clear();
+                ActivityEventDraft draft = draftOf(name);
+                engine.evaluate(lineOf(draft), draft.payload());
+                Map<String, NotificationFactory.NotificationDraft> fired = new java.util.LinkedHashMap<>();
+                created.forEach(notice -> fired.put(notice.ruleKey(), notice));
+                return fired;
+            };
+            Map<String, NotificationFactory.NotificationDraft> closedNotices = byRule.apply("shift-closed");
+            assertEquals(List.of("maintenance-shift", "maintenance-shift-team-leader"), List.copyOf(closedNotices.keySet()));
+            NotificationFactory.NotificationDraft shift = closedNotices.get("maintenance-shift");
             assertEquals("Turno SH-000077 cerrado", shift.title());
             assertTrue(shift.body().contains("330 minutos netos"), shift.body());
+            NotificationFactory.NotificationDraft leaderClosed = closedNotices.get("maintenance-shift-team-leader");
+            assertEquals(List.of(Audience.user("equipo.jefe")), leaderClosed.audiences(), "el jefe de la dotacion, por su usuario");
+            assertEquals("Tu turno SH-000077 cerrado", leaderClosed.title());
+            assertEquals("mantenimiento.tecnico ha cerrado tu turno SH-000077 del 2026-09-29 en las vias 2, con los vehiculos DR-02.", leaderClosed.body());
 
-            NotificationFactory.NotificationDraft started = only.apply("shift-started");
-            assertEquals("maintenance-shift", started.ruleKey());
+            Map<String, NotificationFactory.NotificationDraft> startedNotices = byRule.apply("shift-started");
+            NotificationFactory.NotificationDraft started = startedNotices.get("maintenance-shift");
             assertEquals("Turno SH-000077 iniciado", started.title());
             assertEquals(ActivitySeverity.INFO, started.severity());
+            assertEquals("Tu turno SH-000077 iniciado", startedNotices.get("maintenance-shift-team-leader").title());
 
-            NotificationFactory.NotificationDraft shiftCancelled = only.apply("shift-cancelled");
-            assertEquals("maintenance-shift", shiftCancelled.ruleKey());
+            Map<String, NotificationFactory.NotificationDraft> cancelledNotices = byRule.apply("shift-cancelled");
+            NotificationFactory.NotificationDraft shiftCancelled = cancelledNotices.get("maintenance-shift");
             assertEquals(List.of(Audience.profile("mto-maintenance-manager")), shiftCancelled.audiences());
             assertEquals(List.of("inbox"), shiftCancelled.channels());
             assertEquals(ActivitySeverity.WARNING, shiftCancelled.severity(), "sin gravedad en la regla, la de la linea");
@@ -1217,6 +1232,17 @@ class BusinessLayerTest {
             assertEquals("mantenimiento.responsable ha cancelado el turno SH-000077 del 2026-09-29 (equipo EQ-1) en las vias 2, que ya habia empezado.",
                     shiftCancelled.body());
             assertEquals("/mantenimiento/turnos/90000000-0000-4000-8000-000000000001", shiftCancelled.link());
+            NotificationFactory.NotificationDraft leaderCancelled = cancelledNotices.get("maintenance-shift-team-leader");
+            assertEquals(ActivitySeverity.WARNING, leaderCancelled.severity(), "el jefe se entera con la misma gravedad");
+            assertEquals("/mantenimiento/turnos/90000000-0000-4000-8000-000000000001", leaderCancelled.link());
+
+            created.clear();
+            ActivityEventDraft byTheLeader = draftOf("shift-closed");
+            ActivityEvent closedByTheLeader = lineOf(byTheLeader);
+            closedByTheLeader.setActorUsername("equipo.jefe");
+            engine.evaluate(closedByTheLeader, byTheLeader.payload());
+            assertEquals(List.of("maintenance-shift"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList(),
+                    "lo que hace el jefe con su turno no le avisa a el");
 
             for (String silent : List.of("defect-status-changed", "inspection-defect-created", "inspection-item-failed")) {
                 created.clear();
@@ -1734,6 +1760,87 @@ class BusinessLayerTest {
 
             assertThrows(UnprocessableSourceEventException.class,
                     () -> adapter.handle(resourcesEnvelope(null, "x", "updated", Map.of()), context));
+        }
+
+        @Test
+        void theShippedResourcesRulesTellTheLeaderAndTheManagers() {
+            List<NotificationFactory.NotificationDraft> created = new ArrayList<>();
+            NotificationFactory factory = draft -> {
+                created.add(draft);
+                return Notification.builder().build();
+            };
+            ThrottleGate throttle = mock(ThrottleGate.class);
+            when(throttle.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+            RuleEngineImpl engine = new RuleEngineImpl(new YamlRuleRepository(new ClassPathResource("notification-rules.yml"), Map.of()),
+                    new RuleExpressionEvaluator(), throttle, factory);
+            java.util.function.Function<SourceEnvelope, Map<String, NotificationFactory.NotificationDraft>> fired = envelope -> {
+                created.clear();
+                ActivityEventDraft draft = draftOf(envelope);
+                engine.evaluate(lineOf(draft), draft.payload());
+                Map<String, NotificationFactory.NotificationDraft> byRule = new java.util.LinkedHashMap<>();
+                created.forEach(notice -> byRule.put(notice.ruleKey(), notice));
+                return byRule;
+            };
+
+            Map<String, NotificationFactory.NotificationDraft> changed = fired.apply(fixture("contracts/mto-resources/team-updated.json"));
+            assertEquals(List.of("resources-team-changed"), List.copyOf(changed.keySet()));
+            NotificationFactory.NotificationDraft toTheLeader = changed.get("resources-team-changed");
+            assertEquals(List.of(Audience.user("equipo.jefe")), toTheLeader.audiences(), "el jefe del equipo, por el usuario que trae el evento");
+            assertEquals("Tu equipo A ha cambiado", toTheLeader.title());
+            assertEquals("recursos.gestor ha cambiado tu equipo A (Team A): 4 linemen, supervisor Dana Mizrahi, vehiculo RR-07.", toTheLeader.body());
+            assertEquals("/recursos/organigrama/d0000000-0000-4000-8000-000000000003", toTheLeader.link());
+
+            Map<String, NotificationFactory.NotificationDraft> deactivated = fired.apply(fixture("contracts/mto-resources/team-deactivated.json"));
+            assertEquals(List.of("resources-team-changed", "resources-team-deactivated"), List.copyOf(deactivated.keySet()));
+            assertEquals("Tu equipo A desactivado", deactivated.get("resources-team-changed").title());
+            assertEquals("recursos.gestor ha desactivado tu equipo A (Team A): sus linemen quedan libres.", deactivated.get("resources-team-changed").body());
+            NotificationFactory.NotificationDraft toTheManagers = deactivated.get("resources-team-deactivated");
+            assertEquals(List.of(Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin"), Audience.profile("mto-maintenance-manager")),
+                    toTheManagers.audiences());
+            assertEquals(ActivitySeverity.WARNING, toTheManagers.severity(), "sin gravedad en la regla, la de la baja");
+            assertEquals("Equipo A desactivado", toTheManagers.title());
+            assertEquals("/recursos/organigrama/d0000000-0000-4000-8000-000000000003", toTheManagers.link());
+
+            Map<String, NotificationFactory.NotificationDraft> construction = fired.apply(resourcesEnvelope("team", "d0000000-0000-4000-8000-000000000009", "deactivated",
+                    Map.of("code", "OBR-1", "name", "Obra 1", "discipline", "CONSTRUCTION", "leader", Map.of("username", "recursos.gestor"))));
+            assertEquals(List.of("resources-team-deactivated"), List.copyOf(construction.keySet()), "el jefe que lo desactiva no se avisa a si mismo");
+            assertEquals(List.of(Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin")), construction.get("resources-team-deactivated").audiences(),
+                    "un equipo de construccion no es de mantenimiento");
+
+            Map<String, NotificationFactory.NotificationDraft> outOfService = fired.apply(fixture("contracts/mto-resources/vehicle-updated.json"));
+            assertEquals(List.of("resources-vehicle-unavailable"), List.copyOf(outOfService.keySet()));
+            NotificationFactory.NotificationDraft unavailable = outOfService.get("resources-vehicle-unavailable");
+            assertEquals(List.of(Audience.profile("mto-maintenance-manager"), Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin")),
+                    unavailable.audiences());
+            assertEquals(ActivitySeverity.WARNING, unavailable.severity());
+            assertEquals("Vehiculo RR-07 no disponible", unavailable.title());
+            assertEquals("recursos.gestor ha dejado en UNDER_REPAIR el vehiculo RR-07 (Unimog 7, Unimog road-rail): mientras no este disponible no entra en ningun turno.",
+                    unavailable.body());
+            assertEquals("/recursos/flota/f0000000-0000-4000-8000-000000000007", unavailable.link());
+            assertEquals("Vehiculo RR-07 retirado",
+                    fired.apply(fixture("contracts/mto-resources/vehicle-deactivated.json")).get("resources-vehicle-unavailable").title());
+
+            for (String silent : List.of("person-created", "person-updated", "person-deactivated", "team-created", "vehicle-created")) {
+                assertTrue(fired.apply(fixture("contracts/mto-resources/" + silent + ".json")).isEmpty(), silent + " se registra sin aviso");
+            }
+            assertTrue(fired.apply(resourcesEnvelope("vehicle", "f0000000-0000-4000-8000-000000000007", "updated",
+                    Map.of("code", "RR-07", "name", "Unimog 7", "operationalStatus", "UNDER_REPAIR", "available", false, "availabilityChanged", false))).isEmpty(),
+                    "una nota sobre un vehiculo que ya estaba en el taller no avisa otra vez");
+        }
+
+        private ActivityEventDraft draftOf(SourceEnvelope envelope) {
+            ActivityIngestor recorder = mock(ActivityIngestor.class);
+            when(recorder.ingest(any())).thenReturn(Optional.empty());
+            new ResourcesSourceAdapter(recorder).handle(envelope, context);
+            return ingested(recorder);
+        }
+
+        private ActivityEvent lineOf(ActivityEventDraft draft) {
+            ActivityEvent event = line(draft.sourceService(), draft.type(), draft.actor(), draft.subject().type(), draft.subject().id(), draft.occurredAt());
+            event.setSeverity(draft.severity());
+            event.setSubjectLabel(draft.subject().label());
+            event.setCorrelationId(draft.correlationId());
+            return event;
         }
 
         private SourceEnvelope resourcesEnvelope(String entityName, String entityId, String eventName, Map<String, Object> values) {

@@ -296,6 +296,17 @@ rules:
     body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'maintenance.shift.started' ? 'iniciado' : (event.type == 'maintenance.shift.closed' ? 'cerrado' : 'cancelado')} el turno #{payload.code} del #{payload.shiftDate}#{payload.teamCode != null ? ' (equipo ' + payload.teamCode + ')' : ''} en las vias #{payload.trackIds}#{event.type == 'maintenance.shift.closed' and payload.netWorkMinutes != null ? ': ' + payload.netWorkMinutes + ' minutos netos' : ''}#{event.type == 'maintenance.shift.cancelled' and payload.actualStart != null ? ', que ya habia empezado' : ''}."
     link: "/mantenimiento/turnos/#{event.subjectId}"
 
+  # El jefe del turno (su dotacion de mto-resources) se entera de lo que otra persona hace con su turno;
+  # lo que hace el mismo no le avisa. Un turno sin dotacion no lleva teamLeaderUsername y no avisa.
+  - key: maintenance-shift-team-leader
+    event: [maintenance.shift.started, maintenance.shift.closed, maintenance.shift.cancelled]
+    when: "payload.teamLeaderUsername != null and payload.teamLeaderUsername != event.actorUsername"
+    audiences: ["USER:#{payload.teamLeaderUsername}"]
+    channels: [inbox]
+    title: "Tu turno #{payload.code} #{event.type == 'maintenance.shift.started' ? 'iniciado' : (event.type == 'maintenance.shift.closed' ? 'cerrado' : 'cancelado')}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'maintenance.shift.started' ? 'iniciado' : (event.type == 'maintenance.shift.closed' ? 'cerrado' : 'cancelado')} tu turno #{payload.code} del #{payload.shiftDate} en las vias #{payload.trackIds}#{payload.vehicleCodes != null and !payload.vehicleCodes.isEmpty() ? ', con los vehiculos ' + payload.vehicleCodes : ''}."
+    link: "/mantenimiento/turnos/#{event.subjectId}"
+
   - key: maintenance-material-no-stock
     event: maintenance.material.rejected
     when: "payload.stockErrorCode == 'STK-001'"
@@ -445,6 +456,45 @@ rules:
     title: "Via libre en la posesion #{payload.code}"
     body: "Con la salida de #{payload.teamCode} (#{event.actorUsername ?: payload.deviceId}), todos los equipos de la posesion #{payload.code} estan fuera de la via#{payload.earthingRemoved == true ? ', con sus puestas a tierra retiradas' : ''}."
     link: "/mantenimiento/turnos"
+
+  # --- Recursos (mto-resources) ----------------------------------------------------------------------
+  # Lo que mto-resources cuenta desde su outbox del personal, los equipos y la flota, con la persona que
+  # lo hizo. Lo republicado no llega aqui (el adaptador no lo registra); las altas, los cambios de una
+  # persona y los de un vehiculo que no cambian su disponibilidad se registran sin aviso.
+
+  # El jefe de un equipo, cuando otra persona lo cambia (sus linemen, su supervisor, su vehiculo) o lo
+  # desactiva; lo que hace el mismo no le avisa.
+  - key: resources-team-changed
+    event: [resources.team.updated, resources.team.deactivated]
+    when: "payload.leader?.username != null and payload.leader?.username != event.actorUsername"
+    audiences: ["USER:#{payload.leader?.username}"]
+    channels: [inbox]
+    title: "Tu equipo #{payload.code} #{event.type == 'resources.team.deactivated' ? 'desactivado' : 'ha cambiado'}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'resources.team.deactivated' ? 'desactivado tu equipo ' + payload.code + ' (' + payload.name + '): sus linemen quedan libres' : 'cambiado tu equipo ' + payload.code + ' (' + payload.name + '): ' + payload.linemen + ' linemen' + (payload.supervisor?.fullName != null ? ', supervisor ' + payload.supervisor?.fullName : '') + (payload.defaultVehicle?.code != null ? ', vehiculo ' + payload.defaultVehicle?.code : '')}."
+    link: "/recursos/organigrama/#{event.subjectId}"
+
+  # Un equipo desactivado deja de llevar turnos: a los responsables de recursos (el gestor y el
+  # administrador, que no se contienen) y, si es de mantenimiento, al de mantenimiento (una audiencia
+  # que queda en blanco se omite).
+  - key: resources-team-deactivated
+    event: resources.team.deactivated
+    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, "PROFILE:#{payload.discipline == 'MAINTENANCE' ? 'mto-maintenance-manager' : ''}"]
+    channels: [inbox]
+    title: "Equipo #{payload.code} desactivado"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha desactivado el equipo #{payload.code} (#{payload.name})#{payload.leader?.fullName != null ? ', de ' + payload.leader?.fullName : ''}: sus linemen quedan libres y vuelve con otros al reactivarlo."
+    link: "/recursos/organigrama/#{event.subjectId}"
+
+  # Un vehiculo que ese cambio deja sin disponibilidad (fuera de servicio, en reparacion, retirado
+  # estando disponible) no entra en ningun turno: a los responsables, una vez por cambio
+  # (availabilityChanged), no en cada nota.
+  - key: resources-vehicle-unavailable
+    event: [resources.vehicle.updated, resources.vehicle.deactivated]
+    when: "payload.availabilityChanged == true and payload.available == false"
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-resources-manager, PROFILE:mto-resources-admin]
+    channels: [inbox]
+    title: "Vehiculo #{payload.code} #{event.type == 'resources.vehicle.deactivated' ? 'retirado' : 'no disponible'}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'resources.vehicle.deactivated' ? 'retirado' : 'dejado en ' + payload.operationalStatus} el vehiculo #{payload.code} (#{payload.name}#{payload.type?.name != null ? ', ' + payload.type?.name : ''}): mientras no este disponible no entra en ningun turno."
+    link: "/recursos/flota/#{event.subjectId}"
 
   # --- El propio servicio -------------------------------------------------------------------------
 
