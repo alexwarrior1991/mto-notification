@@ -34,6 +34,22 @@ class DomainModelTest {
     }
 
     @Test
+    void theExpiriesAndTheInstrumentsOfResourcesAreResourcesTypes() {
+        for (String type : List.of(ActivityTypes.RESOURCES_INSTRUMENT_CREATED, ActivityTypes.RESOURCES_INSTRUMENT_UPDATED,
+                ActivityTypes.RESOURCES_INSTRUMENT_DEACTIVATED, ActivityTypes.RESOURCES_QUALIFICATION_EXPIRING,
+                ActivityTypes.RESOURCES_QUALIFICATION_EXPIRED, ActivityTypes.RESOURCES_VEHICLE_DOCUMENT_EXPIRING,
+                ActivityTypes.RESOURCES_VEHICLE_DOCUMENT_EXPIRED, ActivityTypes.RESOURCES_CALIBRATION_EXPIRING,
+                ActivityTypes.RESOURCES_CALIBRATION_EXPIRED)) {
+            assertTrue(ActivityTypes.isKnown(type), type);
+            assertEquals(ActivityCategory.RESOURCES, ActivityCategory.ofType(type), type);
+            assertEquals(Optional.of(ActivityCategory.RESOURCES), ActivityTypes.categoryOf(type), type);
+        }
+        assertEquals("resources.vehicle-document.expired", ActivityTypes.RESOURCES_VEHICLE_DOCUMENT_EXPIRED,
+                "el nombre de la entidad con su guion, como la clave de enrutado mto.resources.vehicle-document.expired");
+        assertTrue(EventTypeMatcher.of(List.of("resources.calibration.*")).matches(ActivityTypes.RESOURCES_CALIBRATION_EXPIRING));
+    }
+
+    @Test
     void aTypeWithoutACategoryOrWithUpperCaseIsRejected() {
         assertThrows(IllegalArgumentException.class, () -> ActivityTypes.requireWellFormed("Access.Login"));
         assertThrows(IllegalArgumentException.class, () -> ActivityTypes.requireWellFormed("unknown.thing"));

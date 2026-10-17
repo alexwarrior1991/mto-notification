@@ -1,0 +1,30 @@
+{
+  "operationId": "b0000000-0000-4000-8000-000000000012",
+  "referenceId": "instrument-ab000000-0000-4000-8000-000000000001",
+  "origin": "mto-resources",
+  "creationDate": "2026-10-17T09:00:00Z",
+  "eventType": "RESOURCES_INSTRUMENT_DEACTIVATED",
+  "data": {
+    "entityName": "instrument",
+    "entityId": "ab000000-0000-4000-8000-000000000001",
+    "eventName": "deactivated",
+    "values": {
+      "code": "VD-03",
+      "name": "Voltage detector 25 kV",
+      "kind": "VOLTAGE_DETECTOR",
+      "serialNumber": "HT-25-0412",
+      "calibratedOn": "2026-10-17",
+      "calibrationExpiresOn": "2027-10-17",
+      "active": false,
+      "version": 2,
+      "republished": false
+    }
+  },
+  "messageHash": "ed93c578688f3ce91bce0e92e2b6f48aead8dbe10e3121aa2dbd0894bad90daa",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000051",
+    "username": "recursos.gestor",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-555555555555"
+}

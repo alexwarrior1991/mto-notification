@@ -1,0 +1,28 @@
+{
+  "operationId": "d92c1ff4-0a7b-3487-984a-46d9fcba272d",
+  "referenceId": "calibration-ab000000-0000-4000-8000-000000000001",
+  "origin": "mto-resources",
+  "creationDate": "2026-10-17T04:15:00Z",
+  "eventType": "RESOURCES_CALIBRATION_EXPIRING",
+  "data": {
+    "entityName": "calibration",
+    "entityId": "ab000000-0000-4000-8000-000000000001",
+    "eventName": "expiring",
+    "values": {
+      "instrumentId": "ab000000-0000-4000-8000-000000000001",
+      "code": "VD-03",
+      "name": "Voltage detector 25 kV",
+      "kind": "VOLTAGE_DETECTOR",
+      "serialNumber": "HT-25-0412",
+      "calibrationExpiresOn": "2026-11-05",
+      "daysLeft": 19
+    }
+  },
+  "messageHash": "409a387dcf869f0aede44ecaede803b5b29b5c2d2a22aff911c9ce5eb22a21b2",
+  "actor": {
+    "id": null,
+    "username": null,
+    "kind": "SYSTEM"
+  },
+  "correlationId": null
+}

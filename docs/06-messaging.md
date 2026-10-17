@@ -157,17 +157,34 @@ directo. Un evento de ese exchange que este servicio aún no conoce se registra 
 
 `ResourcesSourceAdapter` escucha `mto.resources.#` (`docs/06-messaging.md` de `mto-resources`,
 *Published events*): el alta, el cambio y la baja (`created`, `updated`, `deactivated`) de una
-`person`, de un `team` y de un `vehicle`, con la categoría `RESOURCES` (`V3`). El actor es el del
-token de la petición y la correlación, su `X-Correlation-Id`. El sujeto es la persona, el equipo o el
-vehículo por su id, con su código y su nombre de etiqueta (`PER-000003 Yossi Cohen`, `A Team A`,
-`RR-07 Unimog 7`). Del `values` se guarda todo (nunca trae el teléfono): el de un equipo lleva su
-`leader`, su `supervisor`, su `chiefSupervisor` y sus `members`, cada uno con su `username`, que es lo
-que leen las reglas; el de un vehículo, su `type`, su `operationalStatus`, `available` y
-`availabilityChanged`. Lo que trae `republished: true` no se registra: es lo que `POST
-/actuator/republish` de `mto-resources` vuelve a contar para poner al día a un consumidor, y nada ha
-cambiado. La gravedad: una baja es `WARNING`, y también un vehículo que ese cambio deja sin
-disponibilidad (`availabilityChanged` y `available == false`); lo demás, `INFO`. Un evento de ese
-exchange que este servicio aún no conoce se registra igualmente.
+`person`, de un `team`, de un `vehicle` y de un `instrument` (fase 4, bloque C), con la categoría
+`RESOURCES` (`V3`). El actor es el del token de la petición y la correlación, su `X-Correlation-Id`.
+El sujeto es la persona, el equipo, el vehículo o el instrumento por su id, con su código y su nombre
+de etiqueta (`PER-000003 Yossi Cohen`, `A Team A`, `RR-07 Unimog 7`, `VD-03 Voltage detector 25 kV`).
+Del `values` se guarda todo (nunca trae el teléfono): el de un equipo lleva su `leader`, su
+`supervisor`, su `chiefSupervisor` y sus `members`, cada uno con su `username`, que es lo que leen las
+reglas; el de un vehículo, su `type` (con `requiredDriverQualification`), su `operationalStatus`,
+`available`, `availabilityChanged` y sus `documents`; el de una persona, sus `qualifications`; el de un
+instrumento, su `kind`, su `serialNumber` y su calibración (`calibratedOn`, `calibrationExpiresOn`).
+Lo que trae `republished: true` no se registra: es lo que `POST /actuator/republish` de
+`mto-resources` vuelve a contar para poner al día a un consumidor, y nada ha cambiado.
+
+Además, las caducidades que cuenta el vigilante diario de `mto-resources` (`ExpiryWatchService`), sin
+persona detrás (actor `SYSTEM`, sin correlación) y una sola vez por fecha de caducidad (su
+`operationId` sale de la fila y de esa fecha): a punto de caducar (`expiring`, cuando faltan 30 días o
+menos) y ya caducado (`expired`, desde el día siguiente).
+
+| Evento | Sujeto (etiqueta) | Lo que leen las reglas |
+|---|---|---|
+| `qualification.expiring`, `qualification.expired` | la fila de la cualificación de la persona (`PER-000010 Eli Katz · RAIL-DRIVER`) | `personId`, `personCode`, `fullName`, `username`, `qualificationCode`, `qualificationName`, `expiresOn`, `daysLeft`, `teamCode` y `leader` (el jefe de su equipo con su `username`, o nada si ella es el jefe) |
+| `vehicle-document.expiring`, `vehicle-document.expired` | el documento (`RR-07 · ROAD_INSPECTION`) | `vehicleId`, `vehicleCode`, `vehicleName`, `kind`, `reference`, `expiresOn`, `daysLeft` |
+| `calibration.expiring`, `calibration.expired` | el instrumento, por su id (`VD-03 Voltage detector 25 kV`) | `instrumentId`, `code`, `name`, `kind`, `serialNumber`, `calibrationExpiresOn`, `daysLeft` |
+
+`daysLeft` es negativo en una caducada. La gravedad: una baja (también la de un instrumento), un
+vehículo que ese cambio deja sin disponibilidad (`availabilityChanged` y `available == false`) y lo
+que está a punto de caducar son `WARNING`; lo caducado es `CRITICAL`, porque ya no entra en ningún
+turno de mantenimiento; lo demás, `INFO`. Un evento de ese exchange que este servicio aún no
+conoce se registra igualmente.
 
 ### El correlador de usuarios
 
@@ -289,6 +306,12 @@ credencial. El actor es `SERVICE` cuando el cliente resuelto es `mto-users-svc`
 | `resources-team-changed` | `resources.team.updated`, `resources.team.deactivated` hechos por otra persona que el jefe | `USER:#{payload.leader?.username}`, el jefe del equipo | bandeja; enlaza a su unidad del organigrama |
 | `resources-team-deactivated` | `resources.team.deactivated` | `mto-resources-manager`, `mto-resources-admin` y, si es de `MAINTENANCE`, `mto-maintenance-manager` | bandeja |
 | `resources-vehicle-unavailable` | `resources.vehicle.updated` o `deactivated` con `availabilityChanged` y `available == false` | `mto-maintenance-manager`, `mto-resources-manager`, `mto-resources-admin` | bandeja; enlaza a la ficha del vehículo |
+| `resources-qualification-expiring` | `resources.qualification.expiring` | la persona (`USER:#{payload.username}`), el jefe de su equipo (`USER:#{payload.leader?.username}`), `mto-resources-manager`, `mto-resources-admin` | bandeja; `WARNING`; enlaza a la ficha de la persona (`/recursos/personal/{personId}`) |
+| `resources-qualification-expired` | `resources.qualification.expired` | los mismos | bandeja, correo; `CRITICAL`; la misma ficha |
+| `resources-vehicle-document-expiring` | `resources.vehicle-document.expiring` | `mto-resources-manager`, `mto-resources-admin`, `mto-maintenance-manager` | bandeja; `WARNING`; enlaza a la ficha del vehículo (`/recursos/flota/{vehicleId}`) |
+| `resources-vehicle-document-expired` | `resources.vehicle-document.expired` | los mismos | bandeja, correo; `CRITICAL`; la misma ficha |
+| `resources-calibration-expiring` | `resources.calibration.expiring` | `mto-resources-manager`, `mto-resources-admin`, `mto-maintenance-manager` | bandeja; `WARNING`; enlaza a `/recursos/instrumentos` |
+| `resources-calibration-expired` | `resources.calibration.expired` | los mismos | bandeja, correo; `CRITICAL`; la misma lista |
 | `system-source-stalled`, `system-delivery-dead` | los eventos del propio servicio | `mto-ops` | bandeja, correo |
 
 Registro sin aviso: `access.login`, `access.logout`, las ráfagas pequeñas, `users.user.updated`,
@@ -298,7 +321,16 @@ mantenimiento las transiciones ordinarias de una orden (planificar, iniciar), lo
 medios y sus transiciones, las inspecciones `OK`, un punto de checklist en `DEFECT` y el defecto
 que genera una inspección (`maintenance.inspection.defect-created`: el propio defecto ya avisa), y
 de almacén una reserva cancelada o liberada por quien la creó y un ajuste positivo o negativo por
-debajo del umbral.
+debajo del umbral, y de recursos las altas, los cambios de una persona (también sus
+cualificaciones), los de un vehículo que no cambian su disponibilidad (también sus documentos) y el
+alta, el cambio y la baja de un instrumento: lo que avisa es lo que caduca.
+
+Una caducidad de una cualificación avisa una sola vez a cada persona. El jefe nunca es la propia
+persona: si ella es el jefe de su equipo, `leader` llega nulo y esa audiencia queda en blanco y se
+omite, y aunque llegara con el mismo usuario, las audiencias repetidas de una regla se funden en una.
+Quien además tenga uno de los perfiles de la regla ve una sola notificación en su bandeja (una
+notificación con varias audiencias) y recibe un solo correo (una entrega por destinatario). Una
+persona sin usuario (`username` nulo) no tiene bandeja: avisa a su jefe y a los responsables.
 
 ## Correo
 

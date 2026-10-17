@@ -1,0 +1,28 @@
+{
+  "operationId": "147e3aad-c3b7-3ac9-8183-b80c2798bf54",
+  "referenceId": "calibration-ab000000-0000-4000-8000-000000000002",
+  "origin": "mto-resources",
+  "creationDate": "2026-10-17T04:15:00Z",
+  "eventType": "RESOURCES_CALIBRATION_EXPIRED",
+  "data": {
+    "entityName": "calibration",
+    "entityId": "ab000000-0000-4000-8000-000000000002",
+    "eventName": "expired",
+    "values": {
+      "instrumentId": "ab000000-0000-4000-8000-000000000002",
+      "code": "MS-02",
+      "name": "Contact wire gauge 2",
+      "kind": "MEASURING",
+      "serialNumber": "CWG-7781",
+      "calibrationExpiresOn": "2026-10-16",
+      "daysLeft": -1
+    }
+  },
+  "messageHash": "adb284120e6bc4d3faae7b00f08c36129bbaf47ec5a5f6b46a4c38e7c852e1af",
+  "actor": {
+    "id": null,
+    "username": null,
+    "kind": "SYSTEM"
+  },
+  "correlationId": null
+}

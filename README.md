@@ -26,8 +26,9 @@ Keycloak (accesos y administración del realm, con rachas de accesos fallidos) y
 funde el evento de Keycloak con el de `mto-users` del mismo cambio, las reglas en YAML, la bandeja
 por persona, el correo por Mailpit, la retención y la API de administración, y lo que publican
 `mto-maintenance`, `mto-stock`, desde su fase 5, `mto-field` (lo que pasa en una posesión de vía
-nocturna: la categoría `FIELD`, nueva en `V2`) y `mto-resources` (el personal, los equipos y la
-flota: la categoría `RESOURCES`, nueva en `V3`). Quedan la campana y las pantallas del backoffice
+nocturna: la categoría `FIELD`, nueva en `V2`) y `mto-resources` (el personal, los equipos, la
+flota y los instrumentos, y lo que de ellos caduca: la categoría `RESOURCES`, nueva en `V3`). Quedan
+la campana y las pantallas del backoffice
 ([`docs/05-development-roadmap.md`](docs/05-development-roadmap.md)).
 
 ## Qué hace
@@ -134,7 +135,7 @@ frenos por regla y la marca del lector. Detalle en [`docs/03-database.md`](docs/
 | `mto-maintenance` | Cola propia `mto.notification.maintenance.queue` sobre `mto.maintenance.exchange` (`mto.maintenance.#`) | Una línea por evento de su outbox (órdenes y sus transiciones, defectos, inspecciones, turnos, líneas de material, activos desactivados allí, el aviso diario de preventivos) con la persona y la correlación de la petición |
 | `mto-stock` | Cola propia `mto.notification.stock.queue` sobre `mto.stock.exchange` (`mto.stock.#`) | Un material cuyo disponible total cae por debajo de su mínimo (solo al cruzar), una reserva cancelada o liberada (con quien la creó) y un ajuste de inventario, con la persona o la cuenta de servicio de `mto-maintenance` y la correlación de la petición |
 | `mto-field` | Cola propia `mto.notification.field.queue` sobre `mto.field.exchange` (`mto.field.#`) | Una posesión de vía abierta o cerrada, el desalojo ordenado, cada acuse de un equipo, el equipo que no acusa dentro del plazo (su vigilante, sin persona) y la salida de vía de cada equipo, con el responsable o el técnico del dispositivo y el código de la posesión como correlación |
-| `mto-resources` | Cola propia `mto.notification.resources.queue` sobre `mto.resources.exchange` (`mto.resources.#`) | El alta, el cambio y la baja de una persona, de un equipo (con su jefe, su supervisor y sus linemen) y de un vehículo (con su modelo y si está disponible), con la persona y la correlación de la petición; lo que `republish` vuelve a contar (`republished: true`) no se registra |
+| `mto-resources` | Cola propia `mto.notification.resources.queue` sobre `mto.resources.exchange` (`mto.resources.#`) | El alta, el cambio y la baja de una persona (con sus cualificaciones), de un equipo (con su jefe, su supervisor y sus linemen), de un vehículo (con su modelo, sus documentos y si está disponible) y de un instrumento (con su calibración), con la persona y la correlación de la petición; lo que `republish` vuelve a contar (`republished: true`) no se registra. Y las caducidades de su vigilante diario, sin persona y una vez por fecha: una cualificación, un documento de vehículo o una calibración a punto de caducar (`WARNING`, a la bandeja) o caducada (`CRITICAL`, también por correo), a la persona y al jefe de su equipo (las cualificaciones) y a los responsables de recursos y de mantenimiento |
 
 Todo en [`docs/06-messaging.md`](docs/06-messaging.md), reglas incluidas.
 

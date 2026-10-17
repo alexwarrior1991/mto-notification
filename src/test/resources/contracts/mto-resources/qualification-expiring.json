@@ -1,0 +1,38 @@
+{
+  "operationId": "8bc5a989-1327-3f88-8bf1-4ab7ae453e99",
+  "referenceId": "qualification-a0000000-0000-4000-8000-000000000001",
+  "origin": "mto-resources",
+  "creationDate": "2026-10-17T04:15:00Z",
+  "eventType": "RESOURCES_QUALIFICATION_EXPIRING",
+  "data": {
+    "entityName": "qualification",
+    "entityId": "a0000000-0000-4000-8000-000000000001",
+    "eventName": "expiring",
+    "values": {
+      "personId": "c0000000-0000-4000-8000-000000000010",
+      "personCode": "PER-000010",
+      "fullName": "Eli Katz",
+      "username": "equipo.operario",
+      "qualificationCode": "RAIL-DRIVER",
+      "qualificationName": "Rail auxiliary vehicle driver",
+      "kind": "VEHICLE_OPERATION",
+      "expiresOn": "2026-11-15",
+      "daysLeft": 29,
+      "teamCode": "A",
+      "leader": {
+        "personId": "c0000000-0000-4000-8000-000000000003",
+        "code": "PER-000003",
+        "fullName": "Yossi Cohen",
+        "username": "equipo.jefe",
+        "category": "TEAM_LEADER"
+      }
+    }
+  },
+  "messageHash": "879a44fc5dc2de6ee0f94d301bb04fa4968ed788cc7505c50225135d575bf3cd",
+  "actor": {
+    "id": null,
+    "username": null,
+    "kind": "SYSTEM"
+  },
+  "correlationId": null
+}

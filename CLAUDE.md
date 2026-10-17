@@ -140,13 +140,16 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
   `values` entero (el productor ya lo publica por lista blanca y sin secretos) y ponen la gravedad
   por el hecho (urgente, crítico, inseguro, un desalojo ordenado, un equipo que no lo acusa a tiempo
   o que dice que no → `CRITICAL`; bajo mínimo, una reserva tocada por alguien distinto de quien la
-  creó, un ajuste negativo, una posesión cerrada a la fuerza, una baja de personal, equipo o vehículo,
-  un vehículo que deja de estar disponible → `WARNING`); lo que `mto-resources` republica
-  (`republished: true`) no se registra; las reglas leen
+  creó, un ajuste negativo, una posesión cerrada a la fuerza, una baja de personal, equipo, vehículo o
+  instrumento, un vehículo que deja de estar disponible, una cualificación, un documento de vehículo o
+  una calibración a punto de caducar → `WARNING`; caducados → `CRITICAL`); lo que `mto-resources`
+  republica (`republished: true`) no se registra; las reglas leen
   `payload.type`, `payload.to`, `payload.assignedUser`, `payload.stockErrorCode`,
   `payload.createdBy`, `payload.direction`, `payload.accepted`, `payload.allClear`,
-  `payload.teamLeaderUsername`, `payload.leader?.username`, `payload.availabilityChanged`... y
-  las variables `maintenance-service-account` y `large-adjustment-threshold`.
+  `payload.teamLeaderUsername`, `payload.leader?.username`, `payload.availabilityChanged`,
+  `payload.username`, `payload.personId`, `payload.vehicleId`, `payload.daysLeft`... y
+  las variables `maintenance-service-account` y `large-adjustment-threshold`. Una audiencia
+  repetida en una regla se funde en una: una caducidad avisa una vez a la persona aunque sea el jefe.
 - **Un cambio hecho desde `mto-users` se registra una vez con nombre**: su evento (con la persona)
   y el de administración de Keycloak del mismo cambio (con `mto-users-svc`) se funden marcando el
   de Keycloak con `superseded_by` (`UsersChangeCorrelator`, ventana

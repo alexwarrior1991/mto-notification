@@ -290,6 +290,18 @@ class MessagingLayerTest {
         @SuppressWarnings("unchecked") Map<String, Object> vehicleValues = (Map<String, Object>) vehicleUpdated.data().get("values");
         assertEquals(Boolean.FALSE, vehicleValues.get("available"));
         assertEquals(Boolean.TRUE, vehicleValues.get("availabilityChanged"), "un vehiculo que pasa a reparacion");
+
+        SourceEnvelope qualificationExpiring = convert(fixture("contracts/mto-resources/qualification-expiring.json"));
+        assertEquals("RESOURCES_QUALIFICATION_EXPIRING", qualificationExpiring.eventType());
+        assertEquals("SYSTEM", qualificationExpiring.actor().kind(), "el vigilante de caducidades no tiene persona detras");
+        assertNull(qualificationExpiring.actor().username());
+        assertNull(qualificationExpiring.correlationId());
+        @SuppressWarnings("unchecked") Map<String, Object> qualificationValues = (Map<String, Object>) qualificationExpiring.data().get("values");
+        @SuppressWarnings("unchecked") Map<String, Object> qualificationLeader = (Map<String, Object>) qualificationValues.get("leader");
+        assertEquals("equipo.jefe", qualificationLeader.get("username"), "el jefe del equipo de la persona, a quien avisar");
+        SourceEnvelope documentExpired = convert(fixture("contracts/mto-resources/vehicle-document-expired.json"));
+        assertEquals("vehicle-document", documentExpired.data().get("entityName"), "la entidad con su guion, como la clave de enrutado");
+        assertEquals("RESOURCES_VEHICLE_DOCUMENT_EXPIRED", documentExpired.eventType());
     }
 
     // --- consumidor ---

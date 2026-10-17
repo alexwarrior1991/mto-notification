@@ -1,0 +1,28 @@
+{
+  "operationId": "80ed5abc-b652-385e-98fa-1a9840a9d297",
+  "referenceId": "vehicle-document-ad000000-0000-4000-8000-000000000002",
+  "origin": "mto-resources",
+  "creationDate": "2026-10-17T04:15:00Z",
+  "eventType": "RESOURCES_VEHICLE_DOCUMENT_EXPIRED",
+  "data": {
+    "entityName": "vehicle-document",
+    "entityId": "ad000000-0000-4000-8000-000000000002",
+    "eventName": "expired",
+    "values": {
+      "vehicleId": "f0000000-0000-4000-8000-000000000007",
+      "vehicleCode": "RR-07",
+      "vehicleName": "Unimog 7",
+      "kind": "CRANE_CERTIFICATE",
+      "reference": "CRN-2025-031",
+      "expiresOn": "2026-10-16",
+      "daysLeft": -1
+    }
+  },
+  "messageHash": "daff9fe809b3f664d066b5ccea2ede69ddb54e994c0e0c0648913efd1ea9a4a3",
+  "actor": {
+    "id": null,
+    "username": null,
+    "kind": "SYSTEM"
+  },
+  "correlationId": null
+}
