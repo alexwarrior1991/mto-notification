@@ -68,6 +68,10 @@ tienen:
 | `SPRING_MAIL_HOST`, `SPRING_MAIL_PORT` | El SMTP (Mailpit en local: `1025`, bandeja web en `8025`) |
 | `APP_NOTIFICATION_LINK_BASE_URL` | Raíz absoluta de los enlaces del correo: el backoffice |
 
+Hilos virtuales con `SPRING_THREADS_VIRTUAL_ENABLED` (`true`; `false` vuelve a hilos de plataforma)
+y el pool de conexiones con `DATABASE_POOL_MAX_SIZE` (10), que con ellos es el límite real: la suma
+de los pools de todos los servicios tiene que caber en el PostgreSQL de `mto-platform`.
+
 Interruptores: `APP_RABBITMQ_ENABLED=false` arranca sin broker, `APP_KEYCLOAK_EVENTS_ENABLED=false`
 no sondea Keycloak (y arranca sin secreto), `APP_NOTIFICATION_EMAIL_ENABLED=false` deja los avisos
 en la bandeja, `APP_NOTIFICATION_DELIVERY_ENABLED`/`_BURST_CLOSE_ENABLED`/`_RETENTION_PURGE_ENABLED`

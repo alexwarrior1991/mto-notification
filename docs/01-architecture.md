@@ -64,5 +64,12 @@ Reglas que mantienen honestas las capas:
 - **Ciclos rotos a propósito**: la factoría de notificaciones pide el despacho tras el commit a
   través de un `ObjectProvider<DeliveryDispatcher>` (el despachador ingiere eventos, que pasan por
   las reglas, que crean notificaciones), y el detector de rachas recibe el ingestor con `@Lazy`.
+- **Hilos**: `spring.threads.virtual.enabled` (`SPRING_THREADS_VIRTUAL_ENABLED`, `true`) pone en hilos
+  virtuales Tomcat, cada pasada de los `@Scheduled` (el lector, el cierre de ráfagas, el despachador,
+  la purga: ya no comparten un pool de cuatro) y los consumidores de RabbitMQ; el circuito `keycloak`
+  hace cada llamada en un hilo virtual propio (`KeycloakCircuitBreakerExecutorConfiguration`), porque
+  el executor de Resilience4j es un pool de plataforma que la bandera no toca. El límite real pasa a
+  ser el pool de conexiones, a la vista en `DATABASE_POOL_MAX_SIZE` (10). El despacho inmediato
+  (`delivery-dispatch`) sigue siendo un solo hilo a propósito: funde las peticiones seguidas.
 - **Trazas**: `spring-boot-starter-opentelemetry` hacia el colector de `mto-platform`, incluida la
   traza que llega en las cabeceras de RabbitMQ.

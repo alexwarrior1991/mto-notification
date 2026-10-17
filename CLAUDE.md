@@ -35,7 +35,9 @@ TEST_DATABASE_USERNAME=... TEST_DATABASE_PASSWORD=... ./mvnw verify   # sin Dock
 ```
 
 Entorno local: `cd ../mto-platform && docker compose --profile all up -d && ./keycloak/apply-partials.sh`.
-Perfiles `dev` (por defecto), `test`, `prod`. Puerto **8086** (`dev`); el contenedor escucha en 8080
+Hilos virtuales activos (`SPRING_THREADS_VIRTUAL_ENABLED`): el límite es el pool de conexiones
+(`DATABASE_POOL_MAX_SIZE`, 10), y el circuito `keycloak` llama en un hilo virtual
+(`KeycloakCircuitBreakerExecutorConfiguration`). Perfiles `dev` (por defecto), `test`, `prod`. Puerto **8086** (`dev`); el contenedor escucha en 8080
 y `mto-platform` lo publica en 8086. Detrás del gateway el prefijo público es `/api/notifications`.
 
 - Flyway corre al arrancar sobre `src/main/resources/db/migration`; Hibernate es `ddl-auto: validate`
@@ -184,7 +186,8 @@ y los ejemplos de cada productor, consumidor, inbox, firma y topología de las s
 el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera y la de un trabajo que pasa de los diez minutos sin partirse, frenos, arrendamiento, purga) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
 entregas), los tres `@DataJpaTest` que recogen los servicios package-private con una
 `@TestConfiguration` anidada y `@ComponentScan` por nombre; `MtoNotificationApplicationTests`
-(contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean);
+(contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean;
+y los hilos virtuales con su pool y el circuito `keycloak` llamando en uno);
 y en `verify`, `KeycloakAuthorizationIT` y `KeycloakEventsIT` (Keycloak 26.1 en Testcontainers con
 `src/test/resources/keycloak/mto-notification-test-realm.json`, la misma forma que `keycloak/`,
 con la cuenta de servicio, copiado en el contenedor como `mto-realm.json` porque `DirImportProvider`
