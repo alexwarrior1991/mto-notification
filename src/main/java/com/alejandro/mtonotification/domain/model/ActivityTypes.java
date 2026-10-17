@@ -109,6 +109,17 @@ public final class ActivityTypes {
     public static final String FIELD_POSSESSION_EVACUATION_UNACKNOWLEDGED = "field.possession.evacuation-unacknowledged";
     public static final String FIELD_POSSESSION_CLEAR_OF_TRACK = "field.possession.clear-of-track";
 
+    // --- RESOURCES (mto-resources) ---
+    public static final String RESOURCES_PERSON_CREATED = "resources.person.created";
+    public static final String RESOURCES_PERSON_UPDATED = "resources.person.updated";
+    public static final String RESOURCES_PERSON_DEACTIVATED = "resources.person.deactivated";
+    public static final String RESOURCES_TEAM_CREATED = "resources.team.created";
+    public static final String RESOURCES_TEAM_UPDATED = "resources.team.updated";
+    public static final String RESOURCES_TEAM_DEACTIVATED = "resources.team.deactivated";
+    public static final String RESOURCES_VEHICLE_CREATED = "resources.vehicle.created";
+    public static final String RESOURCES_VEHICLE_UPDATED = "resources.vehicle.updated";
+    public static final String RESOURCES_VEHICLE_DEACTIVATED = "resources.vehicle.deactivated";
+
     // --- SYSTEM (este servicio) ---
     public static final String SYSTEM_BROADCAST = "system.broadcast";
     public static final String SYSTEM_TEST_EMAIL = "system.test-email";
@@ -194,6 +205,9 @@ public final class ActivityTypes {
                 FIELD_POSSESSION_OPENED, FIELD_POSSESSION_CLOSED, FIELD_POSSESSION_EVACUATION_ISSUED,
                 FIELD_POSSESSION_EVACUATION_ACKNOWLEDGED, FIELD_POSSESSION_EVACUATION_UNACKNOWLEDGED,
                 FIELD_POSSESSION_CLEAR_OF_TRACK,
+                RESOURCES_PERSON_CREATED, RESOURCES_PERSON_UPDATED, RESOURCES_PERSON_DEACTIVATED,
+                RESOURCES_TEAM_CREATED, RESOURCES_TEAM_UPDATED, RESOURCES_TEAM_DEACTIVATED,
+                RESOURCES_VEHICLE_CREATED, RESOURCES_VEHICLE_UPDATED, RESOURCES_VEHICLE_DEACTIVATED,
                 SYSTEM_BROADCAST, SYSTEM_TEST_EMAIL, SYSTEM_SOURCE_STALLED, SYSTEM_DELIVERY_DEAD}) {
             types.put(type, ActivityCategory.ofType(type));
         }

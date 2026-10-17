@@ -60,6 +60,15 @@ public final class SourceRabbitMqNames {
     public static final String FIELD_DEAD_LETTER_QUEUE = FIELD_QUEUE + ".dlq";
     public static final String FIELD_DEAD_LETTER_ROUTING_KEY = FIELD_QUEUE + ".dlq";
 
+    /** Lo que mto-resources cuenta del personal, los equipos y la flota: altas, cambios y bajas. */
+    public static final String RESOURCES_SOURCE = "resources";
+    public static final String RESOURCES_EXCHANGE = "mto.resources.exchange";
+    public static final String RESOURCES_ROUTING_PATTERN = "mto.resources.#";
+    public static final String RESOURCES_QUEUE = "mto.notification.resources.queue";
+    public static final String RESOURCES_DEAD_LETTER_EXCHANGE = RESOURCES_QUEUE + ".dlx";
+    public static final String RESOURCES_DEAD_LETTER_QUEUE = RESOURCES_QUEUE + ".dlq";
+    public static final String RESOURCES_DEAD_LETTER_ROUTING_KEY = RESOURCES_QUEUE + ".dlq";
+
     public static final String ARG_DEAD_LETTER_EXCHANGE = "x-dead-letter-exchange";
     public static final String ARG_DEAD_LETTER_ROUTING_KEY = "x-dead-letter-routing-key";
 

@@ -1644,6 +1644,111 @@ class BusinessLayerTest {
         }
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Fuente mto-resources
+    // ---------------------------------------------------------------------------------------
+
+    @Nested
+    class Resources {
+
+        private final ActivityIngestor ingestor = mock(ActivityIngestor.class);
+        private final ResourcesSourceAdapter adapter = new ResourcesSourceAdapter(ingestor);
+        private final SourceEventContext context = new SourceEventContext("resources", null, "mto.resources.team.updated");
+
+        @Test
+        void theTeamUpdatedExampleIsAnInfoLineAboutTheTeamWithItsLeaderAndItsLinemen() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-resources/team-updated.json"), context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals(ActivityTypes.RESOURCES_TEAM_UPDATED, draft.type());
+            assertEquals(ActivityCategory.RESOURCES, ActivityCategory.ofType(draft.type()));
+            assertEquals(ActivitySeverity.INFO, draft.severity());
+            assertEquals("mto-resources", draft.sourceService());
+            assertEquals("b0000000-0000-4000-8000-000000000005", draft.sourceEventId());
+            assertEquals(Instant.parse("2026-10-16T09:00:00Z"), draft.occurredAt());
+            assertEquals(Actor.person("recursos.gestor", "6f1b1c8e-0000-4000-8000-000000000051"), draft.actor());
+            assertEquals(Subject.of("team", "d0000000-0000-4000-8000-000000000003", "A Team A"), draft.subject());
+            assertEquals("8c3b8c1a-1111-4222-8333-555555555555", draft.correlationId());
+            assertEquals("team", draft.payload().get("entityName"));
+            assertEquals("updated", draft.payload().get("eventName"));
+            assertEquals("equipo.jefe", ((Map<?, ?>) draft.payload().get("leader")).get("username"), "lo que leen las reglas del jefe");
+            assertEquals(4, ((List<?>) draft.payload().get("members")).size());
+            assertEquals(List.of(4, 5, 6), ((List<?>) draft.payload().get("executionPackageIds")).stream().map(id -> ((Number) id).intValue()).toList());
+        }
+
+        @Test
+        void theNineExamplesAreInTheCatalogueWithTheSeverityOfTheFact() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+            Map<String, ActivitySeverity> expected = new java.util.LinkedHashMap<>();
+            expected.put("person-created", ActivitySeverity.INFO);
+            expected.put("person-updated", ActivitySeverity.INFO);
+            expected.put("person-deactivated", ActivitySeverity.WARNING);
+            expected.put("team-created", ActivitySeverity.INFO);
+            expected.put("team-updated", ActivitySeverity.INFO);
+            expected.put("team-deactivated", ActivitySeverity.WARNING);
+            expected.put("vehicle-created", ActivitySeverity.INFO);
+            expected.put("vehicle-updated", ActivitySeverity.WARNING);
+            expected.put("vehicle-deactivated", ActivitySeverity.WARNING);
+
+            expected.keySet().forEach(name -> adapter.handle(fixture("contracts/mto-resources/" + name + ".json"), context));
+
+            ArgumentCaptor<ActivityEventDraft> drafts = ArgumentCaptor.forClass(ActivityEventDraft.class);
+            verify(ingestor, times(expected.size())).ingest(drafts.capture());
+            List<ActivityEventDraft> all = drafts.getAllValues();
+            int index = 0;
+            for (Map.Entry<String, ActivitySeverity> entry : expected.entrySet()) {
+                ActivityEventDraft draft = all.get(index++);
+                assertEquals("resources." + entry.getKey().replace('-', '.'), draft.type(), entry.getKey());
+                assertTrue(ActivityTypes.isKnown(draft.type()), "los nueve estan en el catalogo: " + draft.type());
+                assertEquals(entry.getValue(), draft.severity(), entry.getKey());
+                assertEquals("mto-resources", draft.sourceService());
+                assertEquals(Boolean.FALSE, draft.payload().get("republished"), entry.getKey());
+            }
+            assertEquals("PER-000003 Yossi Cohen", all.get(0).subject().label(), "una persona, por su codigo y su nombre completo");
+            assertEquals("person", all.get(0).subject().type());
+            assertNull(all.get(0).payload().get("phone"), "el telefono nunca viaja");
+            ActivityEventDraft outOfService = all.get(7);
+            assertEquals("RR-07 Unimog 7", outOfService.subject().label(), "un vehiculo, por su codigo y su nombre");
+            assertEquals("UNDER_REPAIR", outOfService.payload().get("operationalStatus"));
+            assertEquals(Boolean.TRUE, outOfService.payload().get("availabilityChanged"));
+        }
+
+        @Test
+        void aRepublicationIsNotRecordedAndAVehicleChangeThatKeepsItsAvailabilityIsInfo() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(resourcesEnvelope("team", "d0000000-0000-4000-8000-000000000003", "updated",
+                    Map.of("code", "A", "name", "Team A", "republished", true)), context);
+            adapter.handle(resourcesEnvelope("vehicle", "f0000000-0000-4000-8000-000000000007", "updated",
+                    Map.of("code", "RR-07", "name", "Unimog 7", "available", false, "availabilityChanged", false, "republished", false)), context);
+            adapter.handle(resourcesEnvelope("vehicle", "f0000000-0000-4000-8000-000000000007", "updated",
+                    Map.of("code", "RR-07", "name", "Unimog 7", "available", true, "availabilityChanged", true)), context);
+
+            ArgumentCaptor<ActivityEventDraft> drafts = ArgumentCaptor.forClass(ActivityEventDraft.class);
+            verify(ingestor, times(2)).ingest(drafts.capture());
+            assertEquals(ActivitySeverity.INFO, drafts.getAllValues().get(0).severity(), "una nota sobre un vehiculo que ya estaba en el taller");
+            assertEquals(ActivitySeverity.INFO, drafts.getAllValues().get(1).severity(), "vuelve al servicio");
+            assertEquals("RR-07 Unimog 7", drafts.getAllValues().get(1).subject().label());
+
+            assertThrows(UnprocessableSourceEventException.class,
+                    () -> adapter.handle(resourcesEnvelope(null, "x", "updated", Map.of()), context));
+        }
+
+        private SourceEnvelope resourcesEnvelope(String entityName, String entityId, String eventName, Map<String, Object> values) {
+            Map<String, Object> data = new java.util.LinkedHashMap<>();
+            if (entityName != null) {
+                data.put("entityName", entityName);
+            }
+            data.put("entityId", entityId);
+            data.put("eventName", eventName);
+            data.put("values", values);
+            return new SourceEnvelope(UUID.randomUUID(), "ref", "mto-resources", Instant.parse("2026-10-16T09:00:00Z"), "RESOURCES_X",
+                    data, "hash", new SourceActor("6f1b1c8e-0000-4000-8000-000000000051", "recursos.gestor", "PERSON"), "req-1");
+        }
+    }
+
     @Nested
     class UsersCorrelation {
 

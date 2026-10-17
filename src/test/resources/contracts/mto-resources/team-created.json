@@ -1,0 +1,90 @@
+{
+  "operationId": "b0000000-0000-4000-8000-000000000004",
+  "referenceId": "team-d0000000-0000-4000-8000-000000000003",
+  "origin": "mto-resources",
+  "creationDate": "2026-10-16T09:00:00Z",
+  "eventType": "RESOURCES_TEAM_CREATED",
+  "data": {
+    "entityName": "team",
+    "entityId": "d0000000-0000-4000-8000-000000000003",
+    "eventName": "created",
+    "values": {
+      "code": "A",
+      "name": "Team A",
+      "discipline": "MAINTENANCE",
+      "active": true,
+      "parentId": "d0000000-0000-4000-8000-000000000002",
+      "departmentId": "0195b000-0000-7000-8000-000000000002",
+      "executionPackageIds": [
+        4,
+        5,
+        6
+      ],
+      "defaultVehicle": {
+        "id": "f0000000-0000-4000-8000-000000000007",
+        "code": "RR-07"
+      },
+      "leader": {
+        "personId": "c0000000-0000-4000-8000-000000000003",
+        "code": "PER-000003",
+        "fullName": "Yossi Cohen",
+        "username": "equipo.jefe",
+        "category": "TEAM_LEADER"
+      },
+      "supervisor": {
+        "personId": "c0000000-0000-4000-8000-000000000002",
+        "code": "PER-000002",
+        "fullName": "Dana Mizrahi",
+        "username": "equipo.supervisor",
+        "category": "SUPERVISOR"
+      },
+      "chiefSupervisor": {
+        "personId": "c0000000-0000-4000-8000-000000000001",
+        "code": "PER-000001",
+        "fullName": "Moshe Peretz",
+        "username": "equipo.jefe-supervisores",
+        "category": "CHIEF_SUPERVISOR"
+      },
+      "members": [
+        {
+          "personId": "c0000000-0000-4000-8000-000000000010",
+          "code": "PER-000010",
+          "fullName": "Eli Katz",
+          "username": "equipo.operario",
+          "category": "WORKER"
+        },
+        {
+          "personId": "c0000000-0000-4000-8000-000000000011",
+          "code": "PER-000011",
+          "fullName": "Noam Biton",
+          "username": null,
+          "category": "WORKER"
+        },
+        {
+          "personId": "c0000000-0000-4000-8000-000000000012",
+          "code": "PER-000012",
+          "fullName": "Avi Levi",
+          "username": null,
+          "category": "WORKER"
+        },
+        {
+          "personId": "c0000000-0000-4000-8000-000000000013",
+          "code": "PER-000013",
+          "fullName": "Omer Dahan",
+          "username": null,
+          "category": "WORKER"
+        }
+      ],
+      "linemen": 4,
+      "version": 0,
+      "republished": false
+    }
+  },
+  "messageHash": "a951067f787f522f595768d4a7c183c34f97857b791929d4fcf3cffcf7961a3d",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000051",
+    "username": "recursos.gestor",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-555555555555"
+}

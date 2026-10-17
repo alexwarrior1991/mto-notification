@@ -29,6 +29,8 @@ class DomainModelTest {
         assertEquals(ActivityCategory.ACCESS, ActivityCategory.ofType(ActivityTypes.ACCESS_LOGIN_STREAK));
         assertEquals(ActivityCategory.CONFIGURATION, ActivityCategory.ofType(ActivityTypes.masterDataType("profile", "updated")));
         assertTrue(ActivityTypes.isKnown("configuration.section-insulator.deleted"));
+        assertEquals(ActivityCategory.RESOURCES, ActivityCategory.ofType(ActivityTypes.RESOURCES_VEHICLE_UPDATED));
+        assertTrue(ActivityTypes.isKnown("resources.team.deactivated"));
     }
 
     @Test

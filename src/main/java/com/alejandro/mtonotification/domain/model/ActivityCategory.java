@@ -1,7 +1,7 @@
 package com.alejandro.mtonotification.domain.model;
 
 /**
- * Las siete categorias del registro. Coinciden con el tipo {@code activity_category} de PostgreSQL:
+ * Las ocho categorias del registro. Coinciden con el tipo {@code activity_category} de PostgreSQL:
  * anadir una es una migracion.
  *
  * <p>{@link #ACCESS} es distinta de las demas: lleva usuario e IP, tiene su endpoint y su permiso
@@ -26,6 +26,9 @@ public enum ActivityCategory {
 
     /** Las posesiones de via de mto-field: abierta y cerrada, el desalojo con sus acuses y la salida de via de cada equipo. */
     FIELD,
+
+    /** El personal, los equipos y la flota de mto-resources: altas, cambios y bajas. */
+    RESOURCES,
 
     /** Lo que este servicio dice de si mismo: avisos manuales, fuentes paradas, entregas muertas. */
     SYSTEM;

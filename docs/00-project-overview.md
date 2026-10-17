@@ -28,6 +28,7 @@ urgente, de un material bajo mínimo o de tres logins fallidos seguidos.
 | Órdenes, defectos, turnos, materiales | `mto-maintenance` | Eventos de su outbox |
 | Existencias, reservas, movimientos | `mto-stock` | Eventos de su outbox |
 | Posesiones de vía: desalojos, acuses, vía libre | `mto-field` | Eventos de su outbox (el tablero en directo se queda allí) |
+| Personal, equipos y flota: altas, cambios, bajas, vehículos fuera de servicio | `mto-resources` | Eventos de su outbox (lo republicado no se registra) |
 | Usuarios, roles, perfiles | `mto-users` y Keycloak | El evento propio de `mto-users` (con la persona) y los eventos de administración de Keycloak |
 | Identidad y tokens | Keycloak (`mto-platform`) | Resource server; los permisos son roles de cliente de `mto-notification-api` |
 | Enrutado público | `mto-gateway` | `/api/notifications/**` → `/api/v1/notifications/**` |

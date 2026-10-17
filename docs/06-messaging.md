@@ -11,6 +11,7 @@
 | `mto-maintenance` | `mto.maintenance.exchange`, `mto.maintenance.#` → `mto.notification.maintenance.queue` | Fase 3b |
 | `mto-stock` | `mto.stock.exchange`, `mto.stock.#` → `mto.notification.stock.queue` | Fase 4b |
 | `mto-field` | `mto.field.exchange`, `mto.field.#` → `mto.notification.field.queue` | Fase 5 de `mto-field` |
+| `mto-resources` | `mto.resources.exchange`, `mto.resources.#` → `mto.notification.resources.queue` | Fase 4 de `mto-resources` |
 
 Cada cola lleva su DLX/DLQ (`<cola>.dlx`, `<cola>.dlq`), como las de `mto-stock` y
 `mto-maintenance`, y este servicio es su dueño; el exchange se declara en los dos lados con los
@@ -29,7 +30,7 @@ y `traceparent`. Los productores nuevos añaden dos claves, `actor{id, username,
 `correlationId`; `SourceEnvelope` ya las lee y las tolera ausentes. Solo se añaden claves: el
 contrato es de cada productor y este servicio lee lo que reconoce e ignora lo demás. Los eventos
 propios de un servicio (`mto.configuration.exchange`, `mto.users.exchange`,
-`mto.maintenance.exchange`, `mto.stock.exchange`, `mto.field.exchange`) llevan `data` en la forma `DomainEvent` (`entityName`, `entityId`,
+`mto.maintenance.exchange`, `mto.stock.exchange`, `mto.field.exchange`, `mto.resources.exchange`) llevan `data` en la forma `DomainEvent` (`entityName`, `entityId`,
 `eventName`, `values`), y el tipo de la línea sale de ahí: `<categoría>.<entityName>.<eventName>`,
 igual que la clave de enrutado. Un mensaje sin
 `data`, sin `entityName`, sin `eventName` (los eventos propios) o con una operación que no es
@@ -151,6 +152,22 @@ cerrada a la fuerza con equipos aún en la vía es `WARNING`; lo demás, `INFO`.
 responsable a los equipos, los cambios de ventana, los `EventResult` y las tareas que empiezan y
 acaban no se publican: de las tareas ya cuenta `mto-maintenance`, y lo demás es del canal en
 directo. Un evento de ese exchange que este servicio aún no conoce se registra igualmente.
+
+### `mto-resources`
+
+`ResourcesSourceAdapter` escucha `mto.resources.#` (`docs/06-messaging.md` de `mto-resources`,
+*Published events*): el alta, el cambio y la baja (`created`, `updated`, `deactivated`) de una
+`person`, de un `team` y de un `vehicle`, con la categoría `RESOURCES` (`V3`). El actor es el del
+token de la petición y la correlación, su `X-Correlation-Id`. El sujeto es la persona, el equipo o el
+vehículo por su id, con su código y su nombre de etiqueta (`PER-000003 Yossi Cohen`, `A Team A`,
+`RR-07 Unimog 7`). Del `values` se guarda todo (nunca trae el teléfono): el de un equipo lleva su
+`leader`, su `supervisor`, su `chiefSupervisor` y sus `members`, cada uno con su `username`, que es lo
+que leen las reglas; el de un vehículo, su `type`, su `operationalStatus`, `available` y
+`availabilityChanged`. Lo que trae `republished: true` no se registra: es lo que `POST
+/actuator/republish` de `mto-resources` vuelve a contar para poner al día a un consumidor, y nada ha
+cambiado. La gravedad: una baja es `WARNING`, y también un vehículo que ese cambio deja sin
+disponibilidad (`availabilityChanged` y `available == false`); lo demás, `INFO`. Un evento de ese
+exchange que este servicio aún no conoce se registra igualmente.
 
 ### El correlador de usuarios
 

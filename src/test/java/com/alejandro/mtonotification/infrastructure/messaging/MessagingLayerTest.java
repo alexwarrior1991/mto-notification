@@ -135,7 +135,13 @@ class MessagingLayerTest {
                     "app.rabbitmq.sources.field.queue=" + SourceRabbitMqNames.FIELD_QUEUE,
                     "app.rabbitmq.sources.field.dead-letter-exchange=" + SourceRabbitMqNames.FIELD_DEAD_LETTER_EXCHANGE,
                     "app.rabbitmq.sources.field.dead-letter-queue=" + SourceRabbitMqNames.FIELD_DEAD_LETTER_QUEUE,
-                    "app.rabbitmq.sources.field.dead-letter-routing-key=" + SourceRabbitMqNames.FIELD_DEAD_LETTER_ROUTING_KEY);
+                    "app.rabbitmq.sources.field.dead-letter-routing-key=" + SourceRabbitMqNames.FIELD_DEAD_LETTER_ROUTING_KEY,
+                    "app.rabbitmq.sources.resources.exchange=" + SourceRabbitMqNames.RESOURCES_EXCHANGE,
+                    "app.rabbitmq.sources.resources.routing-key=" + SourceRabbitMqNames.RESOURCES_ROUTING_PATTERN,
+                    "app.rabbitmq.sources.resources.queue=" + SourceRabbitMqNames.RESOURCES_QUEUE,
+                    "app.rabbitmq.sources.resources.dead-letter-exchange=" + SourceRabbitMqNames.RESOURCES_DEAD_LETTER_EXCHANGE,
+                    "app.rabbitmq.sources.resources.dead-letter-queue=" + SourceRabbitMqNames.RESOURCES_DEAD_LETTER_QUEUE,
+                    "app.rabbitmq.sources.resources.dead-letter-routing-key=" + SourceRabbitMqNames.RESOURCES_DEAD_LETTER_ROUTING_KEY);
 
     // --- contrato ---
 
@@ -269,6 +275,21 @@ class MessagingLayerTest {
         @SuppressWarnings("unchecked") Map<String, Object> ackValues = (Map<String, Object>) acknowledged.data().get("values");
         assertEquals(Boolean.TRUE, ackValues.get("accepted"));
         assertNull(ackValues.get("reason"), "un valor nulo viaja como nulo");
+
+        SourceEnvelope teamUpdated = convert(fixture("contracts/mto-resources/team-updated.json"));
+        assertEquals("mto-resources", teamUpdated.origin());
+        assertEquals("RESOURCES_TEAM_UPDATED", teamUpdated.eventType());
+        assertEquals("team", teamUpdated.data().get("entityName"));
+        assertEquals("updated", teamUpdated.data().get("eventName"));
+        @SuppressWarnings("unchecked") Map<String, Object> teamValues = (Map<String, Object>) teamUpdated.data().get("values");
+        @SuppressWarnings("unchecked") Map<String, Object> leader = (Map<String, Object>) teamValues.get("leader");
+        assertNotNull(leader.get("username"), "el jefe del equipo viaja con su usuario: a quien avisar");
+        assertEquals(Boolean.FALSE, teamValues.get("republished"));
+
+        SourceEnvelope vehicleUpdated = convert(fixture("contracts/mto-resources/vehicle-updated.json"));
+        @SuppressWarnings("unchecked") Map<String, Object> vehicleValues = (Map<String, Object>) vehicleUpdated.data().get("values");
+        assertEquals(Boolean.FALSE, vehicleValues.get("available"));
+        assertEquals(Boolean.TRUE, vehicleValues.get("availabilityChanged"), "un vehiculo que pasa a reparacion");
     }
 
     // --- consumidor ---
@@ -384,12 +405,14 @@ class MessagingLayerTest {
                     && b.getDestination().equals(SourceRabbitMqNames.MASTER_DATA_QUEUE)));
             assertEquals(List.of(SourceRabbitMqNames.CONFIGURATION_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.FIELD_DEAD_LETTER_EXCHANGE,
                             SourceRabbitMqNames.MAINTENANCE_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_EXCHANGE,
-                            SourceRabbitMqNames.STOCK_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.USERS_DEAD_LETTER_EXCHANGE),
+                            SourceRabbitMqNames.RESOURCES_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.STOCK_DEAD_LETTER_EXCHANGE,
+                            SourceRabbitMqNames.USERS_DEAD_LETTER_EXCHANGE),
                     topology.getDeclarablesByType(DirectExchange.class).stream().map(DirectExchange::getName).sorted().toList());
 
-            // Las otras cinco fuentes de RabbitMQ: cada una con su exchange (el del productor), su cola y sus dead letters.
+            // Las siete fuentes de RabbitMQ: cada una con su exchange (el del productor), su cola y sus dead letters.
             assertEquals(List.of(SourceRabbitMqNames.CONFIGURATION_EXCHANGE, SourceRabbitMqNames.FIELD_EXCHANGE, SourceRabbitMqNames.MAINTENANCE_EXCHANGE,
-                            SourceRabbitMqNames.MASTER_DATA_EXCHANGE, SourceRabbitMqNames.STOCK_EXCHANGE, SourceRabbitMqNames.USERS_EXCHANGE),
+                            SourceRabbitMqNames.MASTER_DATA_EXCHANGE, SourceRabbitMqNames.RESOURCES_EXCHANGE, SourceRabbitMqNames.STOCK_EXCHANGE,
+                            SourceRabbitMqNames.USERS_EXCHANGE),
                     topology.getDeclarablesByType(TopicExchange.class).stream().map(TopicExchange::getName).sorted().toList());
             for (String[] source : new String[][]{
                     {SourceRabbitMqNames.CONFIGURATION_EXCHANGE, SourceRabbitMqNames.CONFIGURATION_ROUTING_PATTERN, SourceRabbitMqNames.CONFIGURATION_QUEUE,
@@ -401,7 +424,9 @@ class MessagingLayerTest {
                     {SourceRabbitMqNames.STOCK_EXCHANGE, SourceRabbitMqNames.STOCK_ROUTING_PATTERN, SourceRabbitMqNames.STOCK_QUEUE,
                             SourceRabbitMqNames.STOCK_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.STOCK_DEAD_LETTER_QUEUE},
                     {SourceRabbitMqNames.FIELD_EXCHANGE, SourceRabbitMqNames.FIELD_ROUTING_PATTERN, SourceRabbitMqNames.FIELD_QUEUE,
-                            SourceRabbitMqNames.FIELD_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.FIELD_DEAD_LETTER_QUEUE}}) {
+                            SourceRabbitMqNames.FIELD_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.FIELD_DEAD_LETTER_QUEUE},
+                    {SourceRabbitMqNames.RESOURCES_EXCHANGE, SourceRabbitMqNames.RESOURCES_ROUTING_PATTERN, SourceRabbitMqNames.RESOURCES_QUEUE,
+                            SourceRabbitMqNames.RESOURCES_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.RESOURCES_DEAD_LETTER_QUEUE}}) {
                 Queue sourceQueue = queues.stream().filter(q -> q.getName().equals(source[2])).findFirst().orElseThrow();
                 assertEquals(source[3], sourceQueue.getArguments().get(SourceRabbitMqNames.ARG_DEAD_LETTER_EXCHANGE));
                 assertTrue(queues.stream().anyMatch(q -> q.getName().equals(source[4])));
@@ -413,6 +438,7 @@ class MessagingLayerTest {
             assertTrue(context.containsBean("maintenanceSourceConsumer"));
             assertTrue(context.containsBean("stockSourceConsumer"));
             assertTrue(context.containsBean("fieldSourceConsumer"));
+            assertTrue(context.containsBean("resourcesSourceConsumer"));
 
             assertEquals(1, context.getBeansOfType(AmqpAdmin.class).size());
             assertTrue(context.containsBean("masterDataSourceConsumer"));
@@ -429,6 +455,7 @@ class MessagingLayerTest {
             assertTrue(context.containsBean("configurationSourceConsumer"));
             assertTrue(context.containsBean("usersSourceConsumer"));
             assertTrue(context.containsBean("fieldSourceConsumer"));
+            assertTrue(context.containsBean("resourcesSourceConsumer"));
             assertTrue(context.containsBean("sourceTopology"));
         });
         contextRunner.withPropertyValues("app.rabbitmq.sources.users.listener-enabled=false",

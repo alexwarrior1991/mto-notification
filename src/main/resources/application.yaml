@@ -252,6 +252,16 @@ app:
         dead-letter-queue: ${APP_RABBITMQ_FIELD_DEAD_LETTER_QUEUE:mto.notification.field.queue.dlq}
         dead-letter-routing-key: ${APP_RABBITMQ_FIELD_DEAD_LETTER_ROUTING_KEY:mto.notification.field.queue.dlq}
         listener-enabled: ${APP_RABBITMQ_FIELD_LISTENER_ENABLED:true}
+      # Lo que mto-resources cuenta del personal, los equipos y la flota (docs/06-messaging.md de ese
+      # repositorio): altas, cambios y bajas. Lo republicado (republished: true) no se registra.
+      resources:
+        exchange: ${APP_RABBITMQ_RESOURCES_EXCHANGE:mto.resources.exchange}
+        routing-key: "${APP_RABBITMQ_RESOURCES_ROUTING_KEY:mto.resources.#}"
+        queue: ${APP_RABBITMQ_RESOURCES_QUEUE:mto.notification.resources.queue}
+        dead-letter-exchange: ${APP_RABBITMQ_RESOURCES_DEAD_LETTER_EXCHANGE:mto.notification.resources.queue.dlx}
+        dead-letter-queue: ${APP_RABBITMQ_RESOURCES_DEAD_LETTER_QUEUE:mto.notification.resources.queue.dlq}
+        dead-letter-routing-key: ${APP_RABBITMQ_RESOURCES_DEAD_LETTER_ROUTING_KEY:mto.notification.resources.queue.dlq}
+        listener-enabled: ${APP_RABBITMQ_RESOURCES_LISTENER_ENABLED:true}
 
   # La Admin API de Keycloak: el lector de eventos de acceso y de administracion, y el directorio
   # con el que se resuelven las direcciones de una audiencia. Todo con la cuenta de servicio
@@ -362,6 +372,7 @@ app:
         maintenance: P400D
         stock: P400D
         field: P400D
+        resources: P400D
         system: P90D
       notifications: P180D
       inbox: P7D
