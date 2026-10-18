@@ -25,8 +25,10 @@ acciones administrativas de `mto-users` con la persona que las hizo, el lector d
 Keycloak (accesos y administración del realm, con rachas de accesos fallidos) y el correlador que
 funde el evento de Keycloak con el de `mto-users` del mismo cambio, las reglas en YAML, la bandeja
 por persona, el correo por Mailpit, la retención y la API de administración, y lo que publican
-`mto-maintenance`, `mto-stock` y, desde su fase 5, `mto-field` (lo que pasa en una posesión de vía
-nocturna: la categoría `FIELD`, nueva en `V2`). Quedan la campana y las pantallas del backoffice
+`mto-maintenance`, `mto-stock`, desde su fase 5, `mto-field` (lo que pasa en una posesión de vía
+nocturna: la categoría `FIELD`, nueva en `V2`) y `mto-resources` (el personal, los equipos, la
+flota y los instrumentos, y lo que de ellos caduca: la categoría `RESOURCES`, nueva en `V3`). Quedan
+la campana y las pantallas del backoffice
 ([`docs/05-development-roadmap.md`](docs/05-development-roadmap.md)).
 
 ## Qué hace
@@ -66,6 +68,10 @@ tienen:
 | `KEYCLOAK_SERVICE_CLIENT_SECRET` | Secreto de la cuenta de servicio `mto-notification-svc`, con la que se leen los eventos de Keycloak y las direcciones de una audiencia |
 | `SPRING_MAIL_HOST`, `SPRING_MAIL_PORT` | El SMTP (Mailpit en local: `1025`, bandeja web en `8025`) |
 | `APP_NOTIFICATION_LINK_BASE_URL` | Raíz absoluta de los enlaces del correo: el backoffice |
+
+Hilos virtuales con `SPRING_THREADS_VIRTUAL_ENABLED` (`true`; `false` vuelve a hilos de plataforma)
+y el pool de conexiones con `DATABASE_POOL_MAX_SIZE` (10), que con ellos es el límite real: la suma
+de los pools de todos los servicios tiene que caber en el PostgreSQL de `mto-platform`.
 
 Interruptores: `APP_RABBITMQ_ENABLED=false` arranca sin broker, `APP_KEYCLOAK_EVENTS_ENABLED=false`
 no sondea Keycloak (y arranca sin secreto), `APP_NOTIFICATION_EMAIL_ENABLED=false` deja los avisos
@@ -129,6 +135,7 @@ frenos por regla y la marca del lector. Detalle en [`docs/03-database.md`](docs/
 | `mto-maintenance` | Cola propia `mto.notification.maintenance.queue` sobre `mto.maintenance.exchange` (`mto.maintenance.#`) | Una línea por evento de su outbox (órdenes y sus transiciones, defectos, inspecciones, turnos, líneas de material, activos desactivados allí, el aviso diario de preventivos) con la persona y la correlación de la petición |
 | `mto-stock` | Cola propia `mto.notification.stock.queue` sobre `mto.stock.exchange` (`mto.stock.#`) | Un material cuyo disponible total cae por debajo de su mínimo (solo al cruzar), una reserva cancelada o liberada (con quien la creó) y un ajuste de inventario, con la persona o la cuenta de servicio de `mto-maintenance` y la correlación de la petición |
 | `mto-field` | Cola propia `mto.notification.field.queue` sobre `mto.field.exchange` (`mto.field.#`) | Una posesión de vía abierta o cerrada, el desalojo ordenado, cada acuse de un equipo, el equipo que no acusa dentro del plazo (su vigilante, sin persona) y la salida de vía de cada equipo, con el responsable o el técnico del dispositivo y el código de la posesión como correlación |
+| `mto-resources` | Cola propia `mto.notification.resources.queue` sobre `mto.resources.exchange` (`mto.resources.#`) | El alta, el cambio y la baja de una persona (con sus cualificaciones), de un equipo (con su jefe, su supervisor y sus linemen), de un vehículo (con su modelo, sus documentos y si está disponible) y de un instrumento (con su calibración), con la persona y la correlación de la petición; lo que `republish` vuelve a contar (`republished: true`) no se registra. Y las caducidades de su vigilante diario, sin persona y una vez por fecha: una cualificación, un documento de vehículo o una calibración a punto de caducar (`WARNING`, a la bandeja) o caducada (`CRITICAL`, también por correo), a la persona y al jefe de su equipo (las cualificaciones) y a los responsables de recursos y de mantenimiento |
 
 Todo en [`docs/06-messaging.md`](docs/06-messaging.md), reglas incluidas.
 

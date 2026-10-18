@@ -375,6 +375,17 @@ class BusinessLayerTest {
         }
 
         @Test
+        void anAccessPointOfATrackIsAMasterDataEntityAndItsChangesGoToABurst() {
+            adapter.handle(fixture("contracts/mto-configuration/master-data-track-access-point-updated.json"), context);
+            verify(bursts).record(eq("mto-configuration"), eq("track-access-point"), eq("updated"), eq(Actor.person("config.editor",
+                    "6f1b1c8e-0000-4000-8000-000000000001")), eq("5d2e7f10-2222-4333-8444-555555555555"), eq("77"),
+                    eq(Instant.parse("2026-10-17T07:00:00Z")));
+            assertTrue(ActivityTypes.isKnown(ActivityTypes.masterDataType("track-access-point", "deleted")));
+            assertFalse(adapter.isDirect("track-access-point", "deleted"), "la baja de un acceso no es una baja de infraestructura de mantenimiento");
+            verify(ingestor, never()).ingest(any());
+        }
+
+        @Test
         void aDeletedCantileverIsAggregatedAndAnUnknownOperationIsPermanent() {
             adapter.handle(envelope("cantilever", "deleted", null, null), context);
             verify(bursts).record(eq("mto-configuration"), eq("cantilever"), eq("deleted"), any(), any(), eq("42"), any());
@@ -1198,18 +1209,33 @@ class BusinessLayerTest {
             assertEquals(List.of("inbox", "email"), dueSoon.channels());
             assertEquals("/mantenimiento/activos", dueSoon.link());
 
-            NotificationFactory.NotificationDraft shift = only.apply("shift-closed");
-            assertEquals("maintenance-shift", shift.ruleKey());
+            // Un turno con dotacion avisa tambien a su jefe cuando otra persona lo inicia, lo cierra o lo cancela.
+            java.util.function.Function<String, Map<String, NotificationFactory.NotificationDraft>> byRule = name -> {
+                created.clear();
+                ActivityEventDraft draft = draftOf(name);
+                engine.evaluate(lineOf(draft), draft.payload());
+                Map<String, NotificationFactory.NotificationDraft> fired = new java.util.LinkedHashMap<>();
+                created.forEach(notice -> fired.put(notice.ruleKey(), notice));
+                return fired;
+            };
+            Map<String, NotificationFactory.NotificationDraft> closedNotices = byRule.apply("shift-closed");
+            assertEquals(List.of("maintenance-shift", "maintenance-shift-team-leader"), List.copyOf(closedNotices.keySet()));
+            NotificationFactory.NotificationDraft shift = closedNotices.get("maintenance-shift");
             assertEquals("Turno SH-000077 cerrado", shift.title());
             assertTrue(shift.body().contains("330 minutos netos"), shift.body());
+            NotificationFactory.NotificationDraft leaderClosed = closedNotices.get("maintenance-shift-team-leader");
+            assertEquals(List.of(Audience.user("equipo.jefe")), leaderClosed.audiences(), "el jefe de la dotacion, por su usuario");
+            assertEquals("Tu turno SH-000077 cerrado", leaderClosed.title());
+            assertEquals("mantenimiento.tecnico ha cerrado tu turno SH-000077 del 2026-09-29 en las vias 2, con los vehiculos DR-02.", leaderClosed.body());
 
-            NotificationFactory.NotificationDraft started = only.apply("shift-started");
-            assertEquals("maintenance-shift", started.ruleKey());
+            Map<String, NotificationFactory.NotificationDraft> startedNotices = byRule.apply("shift-started");
+            NotificationFactory.NotificationDraft started = startedNotices.get("maintenance-shift");
             assertEquals("Turno SH-000077 iniciado", started.title());
             assertEquals(ActivitySeverity.INFO, started.severity());
+            assertEquals("Tu turno SH-000077 iniciado", startedNotices.get("maintenance-shift-team-leader").title());
 
-            NotificationFactory.NotificationDraft shiftCancelled = only.apply("shift-cancelled");
-            assertEquals("maintenance-shift", shiftCancelled.ruleKey());
+            Map<String, NotificationFactory.NotificationDraft> cancelledNotices = byRule.apply("shift-cancelled");
+            NotificationFactory.NotificationDraft shiftCancelled = cancelledNotices.get("maintenance-shift");
             assertEquals(List.of(Audience.profile("mto-maintenance-manager")), shiftCancelled.audiences());
             assertEquals(List.of("inbox"), shiftCancelled.channels());
             assertEquals(ActivitySeverity.WARNING, shiftCancelled.severity(), "sin gravedad en la regla, la de la linea");
@@ -1217,6 +1243,17 @@ class BusinessLayerTest {
             assertEquals("mantenimiento.responsable ha cancelado el turno SH-000077 del 2026-09-29 (equipo EQ-1) en las vias 2, que ya habia empezado.",
                     shiftCancelled.body());
             assertEquals("/mantenimiento/turnos/90000000-0000-4000-8000-000000000001", shiftCancelled.link());
+            NotificationFactory.NotificationDraft leaderCancelled = cancelledNotices.get("maintenance-shift-team-leader");
+            assertEquals(ActivitySeverity.WARNING, leaderCancelled.severity(), "el jefe se entera con la misma gravedad");
+            assertEquals("/mantenimiento/turnos/90000000-0000-4000-8000-000000000001", leaderCancelled.link());
+
+            created.clear();
+            ActivityEventDraft byTheLeader = draftOf("shift-closed");
+            ActivityEvent closedByTheLeader = lineOf(byTheLeader);
+            closedByTheLeader.setActorUsername("equipo.jefe");
+            engine.evaluate(closedByTheLeader, byTheLeader.payload());
+            assertEquals(List.of("maintenance-shift"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList(),
+                    "lo que hace el jefe con su turno no le avisa a el");
 
             for (String silent : List.of("defect-status-changed", "inspection-defect-created", "inspection-item-failed")) {
                 created.clear();
@@ -1641,6 +1678,406 @@ class BusinessLayerTest {
             data.put("values", values);
             return new SourceEnvelope(UUID.randomUUID(), "ref", "mto-field", Instant.parse("2026-10-09T22:05:00Z"), "FIELD_X",
                     data, "hash", new SourceActor("6f1b1c8e-0000-4000-8000-000000000043", "campo.tecnico2", "PERSON"), "PO-000012");
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Fuente mto-resources
+    // ---------------------------------------------------------------------------------------
+
+    @Nested
+    class Resources {
+
+        private final ActivityIngestor ingestor = mock(ActivityIngestor.class);
+        private final ResourcesSourceAdapter adapter = new ResourcesSourceAdapter(ingestor);
+        private final SourceEventContext context = new SourceEventContext("resources", null, "mto.resources.team.updated");
+
+        @Test
+        void theTeamUpdatedExampleIsAnInfoLineAboutTheTeamWithItsLeaderAndItsLinemen() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(fixture("contracts/mto-resources/team-updated.json"), context);
+
+            ActivityEventDraft draft = ingested(ingestor);
+            assertEquals(ActivityTypes.RESOURCES_TEAM_UPDATED, draft.type());
+            assertEquals(ActivityCategory.RESOURCES, ActivityCategory.ofType(draft.type()));
+            assertEquals(ActivitySeverity.INFO, draft.severity());
+            assertEquals("mto-resources", draft.sourceService());
+            assertEquals("b0000000-0000-4000-8000-000000000005", draft.sourceEventId());
+            assertEquals(Instant.parse("2026-10-16T09:00:00Z"), draft.occurredAt());
+            assertEquals(Actor.person("recursos.gestor", "6f1b1c8e-0000-4000-8000-000000000051"), draft.actor());
+            assertEquals(Subject.of("team", "d0000000-0000-4000-8000-000000000003", "A Team A"), draft.subject());
+            assertEquals("8c3b8c1a-1111-4222-8333-555555555555", draft.correlationId());
+            assertEquals("team", draft.payload().get("entityName"));
+            assertEquals("updated", draft.payload().get("eventName"));
+            assertEquals("equipo.jefe", ((Map<?, ?>) draft.payload().get("leader")).get("username"), "lo que leen las reglas del jefe");
+            assertEquals(4, ((List<?>) draft.payload().get("members")).size());
+            assertEquals(List.of(4, 5, 6), ((List<?>) draft.payload().get("executionPackageIds")).stream().map(id -> ((Number) id).intValue()).toList());
+        }
+
+        @Test
+        void theNineExamplesAreInTheCatalogueWithTheSeverityOfTheFact() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+            Map<String, ActivitySeverity> expected = new java.util.LinkedHashMap<>();
+            expected.put("person-created", ActivitySeverity.INFO);
+            expected.put("person-updated", ActivitySeverity.INFO);
+            expected.put("person-deactivated", ActivitySeverity.WARNING);
+            expected.put("team-created", ActivitySeverity.INFO);
+            expected.put("team-updated", ActivitySeverity.INFO);
+            expected.put("team-deactivated", ActivitySeverity.WARNING);
+            expected.put("vehicle-created", ActivitySeverity.INFO);
+            expected.put("vehicle-updated", ActivitySeverity.WARNING);
+            expected.put("vehicle-deactivated", ActivitySeverity.WARNING);
+
+            expected.keySet().forEach(name -> adapter.handle(fixture("contracts/mto-resources/" + name + ".json"), context));
+
+            ArgumentCaptor<ActivityEventDraft> drafts = ArgumentCaptor.forClass(ActivityEventDraft.class);
+            verify(ingestor, times(expected.size())).ingest(drafts.capture());
+            List<ActivityEventDraft> all = drafts.getAllValues();
+            int index = 0;
+            for (Map.Entry<String, ActivitySeverity> entry : expected.entrySet()) {
+                ActivityEventDraft draft = all.get(index++);
+                assertEquals("resources." + entry.getKey().replace('-', '.'), draft.type(), entry.getKey());
+                assertTrue(ActivityTypes.isKnown(draft.type()), "los nueve estan en el catalogo: " + draft.type());
+                assertEquals(entry.getValue(), draft.severity(), entry.getKey());
+                assertEquals("mto-resources", draft.sourceService());
+                assertEquals(Boolean.FALSE, draft.payload().get("republished"), entry.getKey());
+            }
+            assertEquals("PER-000003 Yossi Cohen", all.get(0).subject().label(), "una persona, por su codigo y su nombre completo");
+            assertEquals("person", all.get(0).subject().type());
+            assertNull(all.get(0).payload().get("phone"), "el telefono nunca viaja");
+            ActivityEventDraft outOfService = all.get(7);
+            assertEquals("RR-07 Unimog 7", outOfService.subject().label(), "un vehiculo, por su codigo y su nombre");
+            assertEquals("UNDER_REPAIR", outOfService.payload().get("operationalStatus"));
+            assertEquals(Boolean.TRUE, outOfService.payload().get("availabilityChanged"));
+        }
+
+        @Test
+        void aRepublicationIsNotRecordedAndAVehicleChangeThatKeepsItsAvailabilityIsInfo() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+
+            adapter.handle(resourcesEnvelope("team", "d0000000-0000-4000-8000-000000000003", "updated",
+                    Map.of("code", "A", "name", "Team A", "republished", true)), context);
+            adapter.handle(resourcesEnvelope("vehicle", "f0000000-0000-4000-8000-000000000007", "updated",
+                    Map.of("code", "RR-07", "name", "Unimog 7", "available", false, "availabilityChanged", false, "republished", false)), context);
+            adapter.handle(resourcesEnvelope("vehicle", "f0000000-0000-4000-8000-000000000007", "updated",
+                    Map.of("code", "RR-07", "name", "Unimog 7", "available", true, "availabilityChanged", true)), context);
+
+            ArgumentCaptor<ActivityEventDraft> drafts = ArgumentCaptor.forClass(ActivityEventDraft.class);
+            verify(ingestor, times(2)).ingest(drafts.capture());
+            assertEquals(ActivitySeverity.INFO, drafts.getAllValues().get(0).severity(), "una nota sobre un vehiculo que ya estaba en el taller");
+            assertEquals(ActivitySeverity.INFO, drafts.getAllValues().get(1).severity(), "vuelve al servicio");
+            assertEquals("RR-07 Unimog 7", drafts.getAllValues().get(1).subject().label());
+
+            assertThrows(UnprocessableSourceEventException.class,
+                    () -> adapter.handle(resourcesEnvelope(null, "x", "updated", Map.of()), context));
+        }
+
+        @Test
+        void theShippedResourcesRulesTellTheLeaderAndTheManagers() {
+            List<NotificationFactory.NotificationDraft> created = new ArrayList<>();
+            NotificationFactory factory = draft -> {
+                created.add(draft);
+                return Notification.builder().build();
+            };
+            ThrottleGate throttle = mock(ThrottleGate.class);
+            when(throttle.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+            RuleEngineImpl engine = new RuleEngineImpl(new YamlRuleRepository(new ClassPathResource("notification-rules.yml"), Map.of()),
+                    new RuleExpressionEvaluator(), throttle, factory);
+            java.util.function.Function<SourceEnvelope, Map<String, NotificationFactory.NotificationDraft>> fired = envelope -> {
+                created.clear();
+                ActivityEventDraft draft = draftOf(envelope);
+                engine.evaluate(lineOf(draft), draft.payload());
+                Map<String, NotificationFactory.NotificationDraft> byRule = new java.util.LinkedHashMap<>();
+                created.forEach(notice -> byRule.put(notice.ruleKey(), notice));
+                return byRule;
+            };
+
+            Map<String, NotificationFactory.NotificationDraft> changed = fired.apply(fixture("contracts/mto-resources/team-updated.json"));
+            assertEquals(List.of("resources-team-changed"), List.copyOf(changed.keySet()));
+            NotificationFactory.NotificationDraft toTheLeader = changed.get("resources-team-changed");
+            assertEquals(List.of(Audience.user("equipo.jefe")), toTheLeader.audiences(), "el jefe del equipo, por el usuario que trae el evento");
+            assertEquals("Tu equipo A ha cambiado", toTheLeader.title());
+            assertEquals("recursos.gestor ha cambiado tu equipo A (Team A): 4 linemen, supervisor Dana Mizrahi, vehiculo RR-07.", toTheLeader.body());
+            assertEquals("/recursos/organigrama/d0000000-0000-4000-8000-000000000003", toTheLeader.link());
+
+            Map<String, NotificationFactory.NotificationDraft> deactivated = fired.apply(fixture("contracts/mto-resources/team-deactivated.json"));
+            assertEquals(List.of("resources-team-changed", "resources-team-deactivated"), List.copyOf(deactivated.keySet()));
+            assertEquals("Tu equipo A desactivado", deactivated.get("resources-team-changed").title());
+            assertEquals("recursos.gestor ha desactivado tu equipo A (Team A): sus linemen quedan libres.", deactivated.get("resources-team-changed").body());
+            NotificationFactory.NotificationDraft toTheManagers = deactivated.get("resources-team-deactivated");
+            assertEquals(List.of(Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin"), Audience.profile("mto-maintenance-manager")),
+                    toTheManagers.audiences());
+            assertEquals(ActivitySeverity.WARNING, toTheManagers.severity(), "sin gravedad en la regla, la de la baja");
+            assertEquals("Equipo A desactivado", toTheManagers.title());
+            assertEquals("/recursos/organigrama/d0000000-0000-4000-8000-000000000003", toTheManagers.link());
+
+            Map<String, NotificationFactory.NotificationDraft> construction = fired.apply(resourcesEnvelope("team", "d0000000-0000-4000-8000-000000000009", "deactivated",
+                    Map.of("code", "OBR-1", "name", "Obra 1", "discipline", "CONSTRUCTION", "leader", Map.of("username", "recursos.gestor"))));
+            assertEquals(List.of("resources-team-deactivated"), List.copyOf(construction.keySet()), "el jefe que lo desactiva no se avisa a si mismo");
+            assertEquals(List.of(Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin")), construction.get("resources-team-deactivated").audiences(),
+                    "un equipo de construccion no es de mantenimiento");
+
+            Map<String, NotificationFactory.NotificationDraft> outOfService = fired.apply(fixture("contracts/mto-resources/vehicle-updated.json"));
+            assertEquals(List.of("resources-vehicle-unavailable"), List.copyOf(outOfService.keySet()));
+            NotificationFactory.NotificationDraft unavailable = outOfService.get("resources-vehicle-unavailable");
+            assertEquals(List.of(Audience.profile("mto-maintenance-manager"), Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin")),
+                    unavailable.audiences());
+            assertEquals(ActivitySeverity.WARNING, unavailable.severity());
+            assertEquals("Vehiculo RR-07 no disponible", unavailable.title());
+            assertEquals("recursos.gestor ha dejado en UNDER_REPAIR el vehiculo RR-07 (Unimog 7, Unimog road-rail): mientras no este disponible no entra en ningun turno.",
+                    unavailable.body());
+            assertEquals("/recursos/flota/f0000000-0000-4000-8000-000000000007", unavailable.link());
+            assertEquals("Vehiculo RR-07 retirado",
+                    fired.apply(fixture("contracts/mto-resources/vehicle-deactivated.json")).get("resources-vehicle-unavailable").title());
+
+            for (String silent : List.of("person-created", "person-updated", "person-deactivated", "team-created", "vehicle-created")) {
+                assertTrue(fired.apply(fixture("contracts/mto-resources/" + silent + ".json")).isEmpty(), silent + " se registra sin aviso");
+            }
+            assertTrue(fired.apply(resourcesEnvelope("vehicle", "f0000000-0000-4000-8000-000000000007", "updated",
+                    Map.of("code", "RR-07", "name", "Unimog 7", "operationalStatus", "UNDER_REPAIR", "available", false, "availabilityChanged", false))).isEmpty(),
+                    "una nota sobre un vehiculo que ya estaba en el taller no avisa otra vez");
+        }
+
+        @Test
+        void theExpiryAndInstrumentExamplesCarryTheSeverityAndTheLabelOfTheFact() {
+            when(ingestor.ingest(any())).thenReturn(Optional.empty());
+            Map<String, ActivitySeverity> expected = new java.util.LinkedHashMap<>();
+            expected.put("qualification-expiring", ActivitySeverity.WARNING);
+            expected.put("qualification-expired", ActivitySeverity.CRITICAL);
+            expected.put("vehicle-document-expiring", ActivitySeverity.WARNING);
+            expected.put("vehicle-document-expired", ActivitySeverity.CRITICAL);
+            expected.put("calibration-expiring", ActivitySeverity.WARNING);
+            expected.put("calibration-expired", ActivitySeverity.CRITICAL);
+            expected.put("instrument-created", ActivitySeverity.INFO);
+            expected.put("instrument-updated", ActivitySeverity.INFO);
+            expected.put("instrument-deactivated", ActivitySeverity.WARNING);
+            Map<String, String> types = Map.of(
+                    "qualification-expiring", ActivityTypes.RESOURCES_QUALIFICATION_EXPIRING,
+                    "qualification-expired", ActivityTypes.RESOURCES_QUALIFICATION_EXPIRED,
+                    "vehicle-document-expiring", ActivityTypes.RESOURCES_VEHICLE_DOCUMENT_EXPIRING,
+                    "vehicle-document-expired", ActivityTypes.RESOURCES_VEHICLE_DOCUMENT_EXPIRED,
+                    "calibration-expiring", ActivityTypes.RESOURCES_CALIBRATION_EXPIRING,
+                    "calibration-expired", ActivityTypes.RESOURCES_CALIBRATION_EXPIRED,
+                    "instrument-created", ActivityTypes.RESOURCES_INSTRUMENT_CREATED,
+                    "instrument-updated", ActivityTypes.RESOURCES_INSTRUMENT_UPDATED,
+                    "instrument-deactivated", ActivityTypes.RESOURCES_INSTRUMENT_DEACTIVATED);
+
+            expected.keySet().forEach(name -> adapter.handle(fixture("contracts/mto-resources/" + name + ".json"), context));
+
+            ArgumentCaptor<ActivityEventDraft> drafts = ArgumentCaptor.forClass(ActivityEventDraft.class);
+            verify(ingestor, times(expected.size())).ingest(drafts.capture());
+            Map<String, ActivityEventDraft> byName = new java.util.LinkedHashMap<>();
+            int index = 0;
+            for (String name : expected.keySet()) {
+                byName.put(name, drafts.getAllValues().get(index++));
+            }
+            byName.forEach((name, draft) -> {
+                assertEquals(types.get(name), draft.type(), name);
+                assertTrue(ActivityTypes.isKnown(draft.type()), "en el catalogo: " + draft.type());
+                assertEquals(ActivityCategory.RESOURCES, ActivityCategory.ofType(draft.type()), name);
+                assertEquals(expected.get(name), draft.severity(), name);
+                assertEquals("mto-resources", draft.sourceService(), name);
+            });
+
+            ActivityEventDraft expiring = byName.get("qualification-expiring");
+            assertEquals(Subject.of("qualification", "a1000000-0000-4000-8000-000000000010", "PER-000010 Eli Katz · RAIL-DRIVER"), expiring.subject(),
+                    "la fila de la cualificacion, con la persona y el codigo de la cualificacion");
+            assertEquals(Actor.system(), expiring.actor(), "el vigilante diario no tiene persona detras");
+            assertNull(expiring.correlationId(), "ni peticion");
+            assertEquals("623b9ffc-7df4-3060-b23b-af02ec4da882", expiring.sourceEventId(), "una vez por fecha de caducidad: el operationId derivado");
+            assertEquals("c0000000-0000-4000-8000-000000000010", expiring.payload().get("personId"));
+            assertEquals("equipo.operario", expiring.payload().get("username"));
+            assertEquals(30, ((Number) expiring.payload().get("daysLeft")).intValue());
+            assertEquals("equipo.jefe", ((Map<?, ?>) expiring.payload().get("leader")).get("username"), "el jefe de su equipo, a quien tambien se avisa");
+
+            ActivityEventDraft expired = byName.get("qualification-expired");
+            assertEquals("PER-000003 Yossi Cohen · LIC-C", expired.subject().label());
+            assertNull(expired.payload().get("leader"), "la persona es el jefe de su equipo: no hay otro jefe a quien avisar");
+            assertEquals(-1, ((Number) expired.payload().get("daysLeft")).intValue(), "caducada ayer");
+
+            assertEquals(Subject.of("vehicle-document", "a2000000-0000-4000-8000-000000000002", "RR-07 · ROAD_INSPECTION"),
+                    byName.get("vehicle-document-expiring").subject(), "el documento, por el vehiculo y su tipo");
+            assertEquals("f0000000-0000-4000-8000-000000000007", byName.get("vehicle-document-expiring").payload().get("vehicleId"));
+            assertEquals("RR-07 · INSURANCE", byName.get("vehicle-document-expired").subject().label());
+            assertEquals(Subject.of("calibration", "a3000000-0000-4000-8000-000000000012", "PT-012 Earthing pole 25 kV"),
+                    byName.get("calibration-expiring").subject(), "la calibracion, por el instrumento: su id es el del instrumento");
+            assertEquals("DT-03 Voltage detector 25 kV", byName.get("calibration-expired").subject().label());
+
+            ActivityEventDraft created = byName.get("instrument-created");
+            assertEquals(Subject.of("instrument", "a3000000-0000-4000-8000-000000000012", "PT-012 Earthing pole 25 kV"), created.subject());
+            assertEquals(Actor.person("recursos.gestor", "6f1b1c8e-0000-4000-8000-000000000051"), created.actor());
+            assertEquals("8c3b8c1a-1111-4222-8333-555555555555", created.correlationId());
+            assertEquals("2027-03-31", created.payload().get("calibrationExpiresOn"));
+            assertEquals("EP25-88412", created.payload().get("serialNumber"));
+            assertEquals(Boolean.FALSE, byName.get("instrument-deactivated").payload().get("active"));
+
+            assertEquals("PER-000010 · RAIL-DRIVER", ResourcesSourceAdapter.label("qualification",
+                    PayloadReader.of(Map.of("personCode", "PER-000010", "qualificationCode", "RAIL-DRIVER"))), "sin nombre, el codigo de la persona");
+            assertEquals("ROAD_INSPECTION", ResourcesSourceAdapter.label("vehicle-document", PayloadReader.of(Map.of("kind", "ROAD_INSPECTION"))));
+
+            adapter.handle(resourcesEnvelope("instrument", "ab000000-0000-4000-8000-000000000001", "updated",
+                    Map.of("code", "VD-03", "name", "Voltage detector 25 kV", "republished", true)), context);
+            verify(ingestor, times(expected.size())).ingest(any());
+        }
+
+        @Test
+        void theShippedExpiryRulesTellThePersonHerLeaderAndTheManagersAndMailWhatExpired() {
+            List<NotificationFactory.NotificationDraft> created = new ArrayList<>();
+            NotificationFactory factory = draft -> {
+                created.add(draft);
+                return Notification.builder().build();
+            };
+            ThrottleGate throttle = mock(ThrottleGate.class);
+            when(throttle.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+            RuleEngineImpl engine = new RuleEngineImpl(new YamlRuleRepository(new ClassPathResource("notification-rules.yml"), Map.of()),
+                    new RuleExpressionEvaluator(), throttle, factory);
+            java.util.function.Function<SourceEnvelope, Map<String, NotificationFactory.NotificationDraft>> fired = envelope -> {
+                created.clear();
+                ActivityEventDraft draft = draftOf(envelope);
+                engine.evaluate(lineOf(draft), draft.payload());
+                Map<String, NotificationFactory.NotificationDraft> byRule = new java.util.LinkedHashMap<>();
+                created.forEach(notice -> byRule.put(notice.ruleKey(), notice));
+                return byRule;
+            };
+            List<Audience> resourcesManagers = List.of(Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin"));
+            List<Audience> fleetManagers = List.of(Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin"),
+                    Audience.profile("mto-maintenance-manager"));
+
+            // Una cualificacion a punto de caducar: a la persona, al jefe de su equipo y a los responsables de recursos.
+            Map<String, NotificationFactory.NotificationDraft> qualificationExpiring = fired.apply(fixture("contracts/mto-resources/qualification-expiring.json"));
+            assertEquals(List.of("resources-qualification-expiring"), List.copyOf(qualificationExpiring.keySet()));
+            NotificationFactory.NotificationDraft soon = qualificationExpiring.get("resources-qualification-expiring");
+            assertEquals(List.of(Audience.user("equipo.operario"), Audience.user("equipo.jefe"), resourcesManagers.get(0), resourcesManagers.get(1)),
+                    soon.audiences(), "la persona y el jefe de su equipo por su usuario, y los responsables por su perfil");
+            assertEquals(List.of("inbox"), soon.channels(), "lo que aun no ha caducado no va al correo");
+            assertEquals(ActivitySeverity.WARNING, soon.severity(), "sin gravedad en la regla, la de la linea");
+            assertEquals("Cualificacion RAIL-DRIVER de Eli Katz a punto de caducar", soon.title());
+            assertEquals("La cualificacion RAIL-DRIVER (Rail auxiliary vehicle driver) de PER-000010 Eli Katz (equipo A) caduca el 2026-11-15, en 30 dias. "
+                    + "Con ella caducada no entra en ningun turno: hay que renovarla antes.", soon.body());
+            assertEquals("/recursos/personal/c0000000-0000-4000-8000-000000000010", soon.link());
+            assertEquals("qualification", soon.subjectType());
+
+            // Caducada, y la persona es el jefe de su equipo: leader viene nulo y no se le avisa dos veces.
+            Map<String, NotificationFactory.NotificationDraft> qualificationExpired = fired.apply(fixture("contracts/mto-resources/qualification-expired.json"));
+            assertEquals(List.of("resources-qualification-expired"), List.copyOf(qualificationExpired.keySet()));
+            NotificationFactory.NotificationDraft expired = qualificationExpired.get("resources-qualification-expired");
+            assertEquals(List.of(Audience.user("equipo.jefe"), resourcesManagers.get(0), resourcesManagers.get(1)), expired.audiences(),
+                    "la audiencia del jefe queda en blanco y se omite: el jefe es ella, una sola vez");
+            assertEquals(List.of("inbox", "email"), expired.channels(), "lo caducado llega tambien al correo");
+            assertEquals(ActivitySeverity.CRITICAL, expired.severity());
+            assertEquals("Cualificacion LIC-C de Yossi Cohen caducada", expired.title());
+            assertEquals("La cualificacion LIC-C (Driving licence C) de PER-000003 Yossi Cohen (equipo A) caduco el 2026-10-15: hasta que se renueve no entra en ningun turno.",
+                    expired.body());
+            assertEquals("/recursos/personal/c0000000-0000-4000-8000-000000000003", expired.link());
+
+            Map<String, Object> sameUser = new java.util.LinkedHashMap<>();
+            sameUser.put("personId", "c0000000-0000-4000-8000-000000000003");
+            sameUser.put("personCode", "PER-000003");
+            sameUser.put("fullName", "Yossi Cohen");
+            sameUser.put("username", "equipo.jefe");
+            sameUser.put("qualificationCode", "LIC-C");
+            sameUser.put("expiresOn", "2026-10-16");
+            sameUser.put("daysLeft", -1);
+            sameUser.put("leader", Map.of("username", "equipo.jefe"));
+            assertEquals(List.of(Audience.user("equipo.jefe"), resourcesManagers.get(0), resourcesManagers.get(1)),
+                    fired.apply(resourcesEnvelope("qualification", "a0000000-0000-4000-8000-000000000002", "expired", sameUser))
+                            .get("resources-qualification-expired").audiences(),
+                    "aunque el jefe llegara con el mismo usuario, una audiencia repetida es una sola");
+
+            Map<String, Object> withoutUser = new java.util.LinkedHashMap<>(sameUser);
+            withoutUser.remove("username");
+            withoutUser.put("fullName", "Noam Biton");
+            withoutUser.put("daysLeft", 1);
+            withoutUser.put("expiresOn", "2026-10-18");
+            NotificationFactory.NotificationDraft noInbox = fired.apply(resourcesEnvelope("qualification", "a0000000-0000-4000-8000-000000000003", "expiring",
+                    withoutUser)).get("resources-qualification-expiring");
+            assertEquals(List.of(Audience.user("equipo.jefe"), resourcesManagers.get(0), resourcesManagers.get(1)), noInbox.audiences(),
+                    "una persona sin usuario no tiene bandeja: avisa a su jefe y a los responsables");
+            assertTrue(noInbox.body().contains("caduca el 2026-10-18, manana."), noInbox.body());
+
+            // Un documento de un vehiculo: a los responsables de recursos y al de mantenimiento, que monta los turnos.
+            NotificationFactory.NotificationDraft documentSoon = fired.apply(fixture("contracts/mto-resources/vehicle-document-expiring.json"))
+                    .get("resources-vehicle-document-expiring");
+            assertEquals(fleetManagers, documentSoon.audiences());
+            assertEquals(List.of("inbox"), documentSoon.channels());
+            assertEquals(ActivitySeverity.WARNING, documentSoon.severity());
+            assertEquals("Documento ROAD_INSPECTION del vehiculo RR-07 a punto de caducar", documentSoon.title());
+            assertEquals("El documento ROAD_INSPECTION ITV-2026-118 del vehiculo RR-07 (Unimog 7) caduca el 2026-11-01, en 16 dias. "
+                    + "Con el caducado, el vehiculo no entra en ningun turno: hay que renovarlo antes.", documentSoon.body());
+            assertEquals("/recursos/flota/f0000000-0000-4000-8000-000000000007", documentSoon.link());
+
+            NotificationFactory.NotificationDraft documentExpired = fired.apply(fixture("contracts/mto-resources/vehicle-document-expired.json"))
+                    .get("resources-vehicle-document-expired");
+            assertEquals(fleetManagers, documentExpired.audiences());
+            assertEquals(List.of("inbox", "email"), documentExpired.channels());
+            assertEquals(ActivitySeverity.CRITICAL, documentExpired.severity());
+            assertEquals("Documento INSURANCE del vehiculo RR-07 caducado", documentExpired.title());
+            assertEquals("El documento INSURANCE POL-55120 del vehiculo RR-07 (Unimog 7) caduco el 2026-10-14: hasta que se renueve, el vehiculo no entra en ningun turno.",
+                    documentExpired.body());
+            assertEquals("/recursos/flota/f0000000-0000-4000-8000-000000000007", documentExpired.link());
+
+            Map<String, Object> today = new java.util.LinkedHashMap<>();
+            today.put("vehicleId", "f0000000-0000-4000-8000-000000000007");
+            today.put("vehicleCode", "RR-07");
+            today.put("vehicleName", "Unimog 7");
+            today.put("kind", "INSURANCE");
+            today.put("expiresOn", "2026-10-17");
+            today.put("daysLeft", 0);
+            assertEquals("El documento INSURANCE del vehiculo RR-07 (Unimog 7) caduca el 2026-10-17, hoy. Con el caducado, el vehiculo no entra en ningun turno: hay que renovarlo antes.",
+                    fired.apply(resourcesEnvelope("vehicle-document", "ad000000-0000-4000-8000-000000000003", "expiring", today))
+                            .get("resources-vehicle-document-expiring").body(), "sin referencia, y el ultimo dia");
+
+            // La calibracion de un instrumento: a los mismos tres.
+            NotificationFactory.NotificationDraft calibrationSoon = fired.apply(fixture("contracts/mto-resources/calibration-expiring.json"))
+                    .get("resources-calibration-expiring");
+            assertEquals(fleetManagers, calibrationSoon.audiences());
+            assertEquals(List.of("inbox"), calibrationSoon.channels());
+            assertEquals("Calibracion del instrumento PT-012 a punto de caducar", calibrationSoon.title());
+            assertEquals("La calibracion del instrumento PT-012 (Earthing pole 25 kV, EARTHING_POLE, n/s EP25-88412) caduca el 2026-10-30, en 14 dias. "
+                    + "Con la calibracion caducada, el instrumento no entra en ningun turno: hay que calibrarlo antes.", calibrationSoon.body());
+            assertEquals("/recursos/instrumentos", calibrationSoon.link());
+
+            NotificationFactory.NotificationDraft calibrationExpired = fired.apply(fixture("contracts/mto-resources/calibration-expired.json"))
+                    .get("resources-calibration-expired");
+            assertEquals(fleetManagers, calibrationExpired.audiences());
+            assertEquals(List.of("inbox", "email"), calibrationExpired.channels());
+            assertEquals(ActivitySeverity.CRITICAL, calibrationExpired.severity());
+            assertEquals("Calibracion del instrumento DT-03 caducada", calibrationExpired.title());
+            assertEquals("La calibracion del instrumento DT-03 (Voltage detector 25 kV, VOLTAGE_DETECTOR, n/s VD-7731) caduco el 2026-10-12: "
+                    + "hasta que se calibre de nuevo, el instrumento no entra en ningun turno.", calibrationExpired.body());
+            assertEquals("/recursos/instrumentos", calibrationExpired.link());
+
+            for (String silent : List.of("instrument-created", "instrument-updated", "instrument-deactivated")) {
+                assertTrue(fired.apply(fixture("contracts/mto-resources/" + silent + ".json")).isEmpty(), silent + " se registra sin aviso");
+            }
+        }
+
+        private ActivityEventDraft draftOf(SourceEnvelope envelope) {
+            ActivityIngestor recorder = mock(ActivityIngestor.class);
+            when(recorder.ingest(any())).thenReturn(Optional.empty());
+            new ResourcesSourceAdapter(recorder).handle(envelope, context);
+            return ingested(recorder);
+        }
+
+        private ActivityEvent lineOf(ActivityEventDraft draft) {
+            ActivityEvent event = line(draft.sourceService(), draft.type(), draft.actor(), draft.subject().type(), draft.subject().id(), draft.occurredAt());
+            event.setSeverity(draft.severity());
+            event.setSubjectLabel(draft.subject().label());
+            event.setCorrelationId(draft.correlationId());
+            return event;
+        }
+
+        private SourceEnvelope resourcesEnvelope(String entityName, String entityId, String eventName, Map<String, Object> values) {
+            Map<String, Object> data = new java.util.LinkedHashMap<>();
+            if (entityName != null) {
+                data.put("entityName", entityName);
+            }
+            data.put("entityId", entityId);
+            data.put("eventName", eventName);
+            data.put("values", values);
+            return new SourceEnvelope(UUID.randomUUID(), "ref", "mto-resources", Instant.parse("2026-10-16T09:00:00Z"), "RESOURCES_X",
+                    data, "hash", new SourceActor("6f1b1c8e-0000-4000-8000-000000000051", "recursos.gestor", "PERSON"), "req-1");
         }
     }
 

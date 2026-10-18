@@ -20,6 +20,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -61,7 +62,10 @@ class RulesConfigurationTest {
                 "maintenance-material-rejected", "maintenance-material-stock-unavailable", "maintenance-asset-disabled",
                 "maintenance-preventive-due-soon", "stock-material-below-minimum", "stock-reservation-touched-by-someone-else",
                 "stock-large-negative-adjustment", "field-possession-opened", "field-possession-closed", "field-evacuation-issued",
-                "field-evacuation-refused", "field-evacuation-complete", "field-evacuation-unacknowledged", "field-all-clear")));
+                "field-evacuation-refused", "field-evacuation-complete", "field-evacuation-unacknowledged", "field-all-clear",
+                "maintenance-shift-team-leader", "resources-team-changed", "resources-team-deactivated", "resources-vehicle-unavailable",
+                "resources-qualification-expiring", "resources-qualification-expired", "resources-vehicle-document-expiring",
+                "resources-vehicle-document-expired", "resources-calibration-expiring", "resources-calibration-expired")));
 
         NotificationRule job = repository.rules().stream().filter(rule -> rule.key().equals("configuration-job-finished")).findFirst().orElseThrow();
         assertEquals(List.of("USER:#{payload.createdBy}"), job.audiences(), "el trabajo avisa a quien lo lanzo");
@@ -82,6 +86,44 @@ class RulesConfigurationTest {
         NotificationRule shift = repository.rules().stream().filter(rule -> rule.key().equals("maintenance-shift")).findFirst().orElseThrow();
         assertTrue(shift.matcher().matches(ActivityTypes.MAINTENANCE_SHIFT_CANCELLED), "un turno cancelado avisa como uno iniciado o cerrado");
         assertTrue(shift.matcher().matches(ActivityTypes.MAINTENANCE_SHIFT_STARTED) && shift.matcher().matches(ActivityTypes.MAINTENANCE_SHIFT_CLOSED));
+
+        NotificationRule leader = repository.rules().stream().filter(rule -> rule.key().equals("maintenance-shift-team-leader")).findFirst().orElseThrow();
+        assertEquals(List.of("USER:#{payload.teamLeaderUsername}"), leader.audiences(), "el jefe de la dotacion del turno");
+        assertTrue(leader.matcher().matches(ActivityTypes.MAINTENANCE_SHIFT_CANCELLED));
+        NotificationRule teamChanged = repository.rules().stream().filter(rule -> rule.key().equals("resources-team-changed")).findFirst().orElseThrow();
+        assertEquals(List.of("USER:#{payload.leader?.username}"), teamChanged.audiences(), "el jefe del equipo, dentro del evento");
+        assertTrue(teamChanged.matcher().matches(ActivityTypes.RESOURCES_TEAM_DEACTIVATED));
+        NotificationRule vehicleUnavailable = repository.rules().stream().filter(rule -> rule.key().equals("resources-vehicle-unavailable")).findFirst().orElseThrow();
+        assertTrue(vehicleUnavailable.audiences().contains("PROFILE:mto-resources-manager"));
+        assertTrue(vehicleUnavailable.matcher().matches(ActivityTypes.RESOURCES_VEHICLE_DEACTIVATED), "retirar uno disponible es dejarlo sin disponibilidad");
+
+        List<String> resourcesManagers = List.of("PROFILE:mto-resources-manager", "PROFILE:mto-resources-admin");
+        List<String> fleetManagers = List.of("PROFILE:mto-resources-manager", "PROFILE:mto-resources-admin", "PROFILE:mto-maintenance-manager");
+        Map<String, String> expiries = Map.of(
+                "resources-qualification-expiring", ActivityTypes.RESOURCES_QUALIFICATION_EXPIRING,
+                "resources-qualification-expired", ActivityTypes.RESOURCES_QUALIFICATION_EXPIRED,
+                "resources-vehicle-document-expiring", ActivityTypes.RESOURCES_VEHICLE_DOCUMENT_EXPIRING,
+                "resources-vehicle-document-expired", ActivityTypes.RESOURCES_VEHICLE_DOCUMENT_EXPIRED,
+                "resources-calibration-expiring", ActivityTypes.RESOURCES_CALIBRATION_EXPIRING,
+                "resources-calibration-expired", ActivityTypes.RESOURCES_CALIBRATION_EXPIRED);
+        expiries.forEach((key, type) -> {
+            NotificationRule expiry = repository.rules().stream().filter(rule -> rule.key().equals(key)).findFirst().orElseThrow();
+            assertTrue(expiry.matcher().matches(type), key);
+            assertEquals(type.endsWith(".expired") ? List.of("inbox", "email") : List.of("inbox"), expiry.channels(),
+                    key + ": lo caducado llega tambien al correo, lo que va a caducar solo a la bandeja");
+            assertNull(expiry.severity(), key + ": la gravedad es la de la linea (WARNING o CRITICAL)");
+            if (key.startsWith("resources-qualification")) {
+                assertEquals(List.of("USER:#{payload.username}", "USER:#{payload.leader?.username}", resourcesManagers.get(0), resourcesManagers.get(1)),
+                        expiry.audiences(), key + ": la persona, el jefe de su equipo y los responsables de recursos");
+                assertEquals("/recursos/personal/#{payload.personId}", expiry.link());
+            } else {
+                assertEquals(fleetManagers, expiry.audiences(), key + ": los responsables de recursos y el de mantenimiento");
+            }
+        });
+        assertEquals("/recursos/flota/#{payload.vehicleId}", repository.rules().stream()
+                .filter(rule -> rule.key().equals("resources-vehicle-document-expired")).findFirst().orElseThrow().link());
+        assertEquals("/recursos/instrumentos", repository.rules().stream()
+                .filter(rule -> rule.key().equals("resources-calibration-expiring")).findFirst().orElseThrow().link());
 
         NotificationRule belowMinimum = repository.rules().stream().filter(rule -> rule.key().equals("stock-material-below-minimum")).findFirst().orElseThrow();
         assertEquals(Duration.ofHours(24), belowMinimum.throttle().window(), "un material bajo minimo avisa una vez al dia");

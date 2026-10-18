@@ -1,0 +1,50 @@
+{
+  "operationId": "b0000000-0000-4000-8000-000000000007",
+  "referenceId": "vehicle-f0000000-0000-4000-8000-000000000007",
+  "origin": "mto-resources",
+  "creationDate": "2026-10-16T09:00:00Z",
+  "eventType": "RESOURCES_VEHICLE_CREATED",
+  "data": {
+    "entityName": "vehicle",
+    "entityId": "f0000000-0000-4000-8000-000000000007",
+    "eventName": "created",
+    "values": {
+      "code": "RR-07",
+      "name": "Unimog 7",
+      "type": {
+        "id": "e0000000-0000-4000-8000-000000000001",
+        "code": "UNIMOG-RR",
+        "name": "Unimog road-rail",
+        "mobility": "ROAD_RAIL",
+        "category": "ROAD_RAIL_TRUCK",
+        "selfPropelled": true,
+        "portable": false,
+        "seats": 7,
+        "railGearType": "RAIL_WHEEL_DRIVE",
+        "transportModeAuthorised": false,
+        "capabilities": [
+          "CRANE",
+          "CREW_CABIN",
+          "TOWING"
+        ],
+        "requiredDriverQualification": "RR-OPERATOR"
+      },
+      "registrationPlate": "12-345-67",
+      "railVehicleNumber": null,
+      "operationalStatus": "OPERATIONAL",
+      "available": true,
+      "active": true,
+      "version": 0,
+      "availabilityChanged": false,
+      "republished": false,
+      "documents": []
+    }
+  },
+  "messageHash": "495b133d89723eb2c552a345797a21bb55645d6b68dd5e99f54af46c1ef2871d",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000051",
+    "username": "recursos.gestor",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-555555555555"
+}

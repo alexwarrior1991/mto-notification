@@ -296,6 +296,17 @@ rules:
     body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'maintenance.shift.started' ? 'iniciado' : (event.type == 'maintenance.shift.closed' ? 'cerrado' : 'cancelado')} el turno #{payload.code} del #{payload.shiftDate}#{payload.teamCode != null ? ' (equipo ' + payload.teamCode + ')' : ''} en las vias #{payload.trackIds}#{event.type == 'maintenance.shift.closed' and payload.netWorkMinutes != null ? ': ' + payload.netWorkMinutes + ' minutos netos' : ''}#{event.type == 'maintenance.shift.cancelled' and payload.actualStart != null ? ', que ya habia empezado' : ''}."
     link: "/mantenimiento/turnos/#{event.subjectId}"
 
+  # El jefe del turno (su dotacion de mto-resources) se entera de lo que otra persona hace con su turno;
+  # lo que hace el mismo no le avisa. Un turno sin dotacion no lleva teamLeaderUsername y no avisa.
+  - key: maintenance-shift-team-leader
+    event: [maintenance.shift.started, maintenance.shift.closed, maintenance.shift.cancelled]
+    when: "payload.teamLeaderUsername != null and payload.teamLeaderUsername != event.actorUsername"
+    audiences: ["USER:#{payload.teamLeaderUsername}"]
+    channels: [inbox]
+    title: "Tu turno #{payload.code} #{event.type == 'maintenance.shift.started' ? 'iniciado' : (event.type == 'maintenance.shift.closed' ? 'cerrado' : 'cancelado')}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'maintenance.shift.started' ? 'iniciado' : (event.type == 'maintenance.shift.closed' ? 'cerrado' : 'cancelado')} tu turno #{payload.code} del #{payload.shiftDate} en las vias #{payload.trackIds}#{payload.vehicleCodes != null and !payload.vehicleCodes.isEmpty() ? ', con los vehiculos ' + payload.vehicleCodes : ''}."
+    link: "/mantenimiento/turnos/#{event.subjectId}"
+
   - key: maintenance-material-no-stock
     event: maintenance.material.rejected
     when: "payload.stockErrorCode == 'STK-001'"
@@ -445,6 +456,105 @@ rules:
     title: "Via libre en la posesion #{payload.code}"
     body: "Con la salida de #{payload.teamCode} (#{event.actorUsername ?: payload.deviceId}), todos los equipos de la posesion #{payload.code} estan fuera de la via#{payload.earthingRemoved == true ? ', con sus puestas a tierra retiradas' : ''}."
     link: "/mantenimiento/turnos"
+
+  # --- Recursos (mto-resources) ----------------------------------------------------------------------
+  # Lo que mto-resources cuenta desde su outbox del personal, los equipos y la flota, con la persona que
+  # lo hizo. Lo republicado no llega aqui (el adaptador no lo registra); las altas, los cambios de una
+  # persona y los de un vehiculo que no cambian su disponibilidad se registran sin aviso.
+
+  # El jefe de un equipo, cuando otra persona lo cambia (sus linemen, su supervisor, su vehiculo) o lo
+  # desactiva; lo que hace el mismo no le avisa.
+  - key: resources-team-changed
+    event: [resources.team.updated, resources.team.deactivated]
+    when: "payload.leader?.username != null and payload.leader?.username != event.actorUsername"
+    audiences: ["USER:#{payload.leader?.username}"]
+    channels: [inbox]
+    title: "Tu equipo #{payload.code} #{event.type == 'resources.team.deactivated' ? 'desactivado' : 'ha cambiado'}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'resources.team.deactivated' ? 'desactivado tu equipo ' + payload.code + ' (' + payload.name + '): sus linemen quedan libres' : 'cambiado tu equipo ' + payload.code + ' (' + payload.name + '): ' + payload.linemen + ' linemen' + (payload.supervisor?.fullName != null ? ', supervisor ' + payload.supervisor?.fullName : '') + (payload.defaultVehicle?.code != null ? ', vehiculo ' + payload.defaultVehicle?.code : '')}."
+    link: "/recursos/organigrama/#{event.subjectId}"
+
+  # Un equipo desactivado deja de llevar turnos: a los responsables de recursos (el gestor y el
+  # administrador, que no se contienen) y, si es de mantenimiento, al de mantenimiento (una audiencia
+  # que queda en blanco se omite).
+  - key: resources-team-deactivated
+    event: resources.team.deactivated
+    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, "PROFILE:#{payload.discipline == 'MAINTENANCE' ? 'mto-maintenance-manager' : ''}"]
+    channels: [inbox]
+    title: "Equipo #{payload.code} desactivado"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha desactivado el equipo #{payload.code} (#{payload.name})#{payload.leader?.fullName != null ? ', de ' + payload.leader?.fullName : ''}: sus linemen quedan libres y vuelve con otros al reactivarlo."
+    link: "/recursos/organigrama/#{event.subjectId}"
+
+  # Un vehiculo que ese cambio deja sin disponibilidad (fuera de servicio, en reparacion, retirado
+  # estando disponible) no entra en ningun turno: a los responsables, una vez por cambio
+  # (availabilityChanged), no en cada nota.
+  - key: resources-vehicle-unavailable
+    event: [resources.vehicle.updated, resources.vehicle.deactivated]
+    when: "payload.availabilityChanged == true and payload.available == false"
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-resources-manager, PROFILE:mto-resources-admin]
+    channels: [inbox]
+    title: "Vehiculo #{payload.code} #{event.type == 'resources.vehicle.deactivated' ? 'retirado' : 'no disponible'}"
+    body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'resources.vehicle.deactivated' ? 'retirado' : 'dejado en ' + payload.operationalStatus} el vehiculo #{payload.code} (#{payload.name}#{payload.type?.name != null ? ', ' + payload.type?.name : ''}): mientras no este disponible no entra en ningun turno."
+    link: "/recursos/flota/#{event.subjectId}"
+
+  # Las caducidades: el vigilante diario de mto-resources cuenta una vez por fecha de caducidad lo que
+  # caduca en los proximos dias (expiring, WARNING) y lo que ya ha caducado (expired, CRITICAL, tambien
+  # por correo). Lo caducado no entra en ningun turno de mantenimiento: ni la persona, ni el vehiculo,
+  # ni el instrumento. Las altas, los cambios y las bajas de un instrumento se registran sin aviso.
+
+  # Una cualificacion de una persona: a ella, al jefe de su equipo y a los responsables de recursos. El
+  # jefe nunca es la propia persona (si ella es el jefe, leader viene nulo y esa audiencia se omite), y
+  # una persona sin usuario no tiene bandeja: avisa solo a los demas.
+  - key: resources-qualification-expiring
+    event: resources.qualification.expiring
+    audiences: ["USER:#{payload.username}", "USER:#{payload.leader?.username}", PROFILE:mto-resources-manager, PROFILE:mto-resources-admin]
+    channels: [inbox]
+    title: "Cualificacion #{payload.qualificationCode} de #{payload.fullName} a punto de caducar"
+    body: "La cualificacion #{payload.qualificationCode} (#{payload.qualificationName}) de #{payload.personCode} #{payload.fullName}#{payload.teamCode != null ? ' (equipo ' + payload.teamCode + ')' : ''} caduca el #{payload.expiresOn}, #{payload.daysLeft == 0 ? 'hoy' : (payload.daysLeft == 1 ? 'manana' : 'en ' + payload.daysLeft + ' dias')}. Con ella caducada no entra en ningun turno: hay que renovarla antes."
+    link: "/recursos/personal/#{payload.personId}"
+
+  - key: resources-qualification-expired
+    event: resources.qualification.expired
+    audiences: ["USER:#{payload.username}", "USER:#{payload.leader?.username}", PROFILE:mto-resources-manager, PROFILE:mto-resources-admin]
+    channels: [inbox, email]
+    title: "Cualificacion #{payload.qualificationCode} de #{payload.fullName} caducada"
+    body: "La cualificacion #{payload.qualificationCode} (#{payload.qualificationName}) de #{payload.personCode} #{payload.fullName}#{payload.teamCode != null ? ' (equipo ' + payload.teamCode + ')' : ''} caduco el #{payload.expiresOn}: hasta que se renueve no entra en ningun turno."
+    link: "/recursos/personal/#{payload.personId}"
+
+  # Un documento de un vehiculo (la ITV, la inspeccion ferroviaria, el seguro, el certificado de la grua
+  # o de la plataforma): a los responsables de recursos y al de mantenimiento, que monta los turnos.
+  - key: resources-vehicle-document-expiring
+    event: resources.vehicle-document.expiring
+    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "Documento #{payload.kind} del vehiculo #{payload.vehicleCode} a punto de caducar"
+    body: "El documento #{payload.kind}#{payload.reference != null ? ' ' + payload.reference : ''} del vehiculo #{payload.vehicleCode} (#{payload.vehicleName}) caduca el #{payload.expiresOn}, #{payload.daysLeft == 0 ? 'hoy' : (payload.daysLeft == 1 ? 'manana' : 'en ' + payload.daysLeft + ' dias')}. Con el caducado, el vehiculo no entra en ningun turno: hay que renovarlo antes."
+    link: "/recursos/flota/#{payload.vehicleId}"
+
+  - key: resources-vehicle-document-expired
+    event: resources.vehicle-document.expired
+    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager]
+    channels: [inbox, email]
+    title: "Documento #{payload.kind} del vehiculo #{payload.vehicleCode} caducado"
+    body: "El documento #{payload.kind}#{payload.reference != null ? ' ' + payload.reference : ''} del vehiculo #{payload.vehicleCode} (#{payload.vehicleName}) caduco el #{payload.expiresOn}: hasta que se renueve, el vehiculo no entra en ningun turno."
+    link: "/recursos/flota/#{payload.vehicleId}"
+
+  # La calibracion de un instrumento (una pertiga de puesta a tierra, un detector de tension, un equipo
+  # de medida): a los mismos tres.
+  - key: resources-calibration-expiring
+    event: resources.calibration.expiring
+    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager]
+    channels: [inbox]
+    title: "Calibracion del instrumento #{payload.code} a punto de caducar"
+    body: "La calibracion del instrumento #{payload.code} (#{payload.name}, #{payload.kind}#{payload.serialNumber != null ? ', n/s ' + payload.serialNumber : ''}) caduca el #{payload.calibrationExpiresOn}, #{payload.daysLeft == 0 ? 'hoy' : (payload.daysLeft == 1 ? 'manana' : 'en ' + payload.daysLeft + ' dias')}. Con la calibracion caducada, el instrumento no entra en ningun turno: hay que calibrarlo antes."
+    link: "/recursos/instrumentos"
+
+  - key: resources-calibration-expired
+    event: resources.calibration.expired
+    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager]
+    channels: [inbox, email]
+    title: "Calibracion del instrumento #{payload.code} caducada"
+    body: "La calibracion del instrumento #{payload.code} (#{payload.name}, #{payload.kind}#{payload.serialNumber != null ? ', n/s ' + payload.serialNumber : ''}) caduco el #{payload.calibrationExpiresOn}: hasta que se calibre de nuevo, el instrumento no entra en ningun turno."
+    link: "/recursos/instrumentos"
 
   # --- El propio servicio -------------------------------------------------------------------------
 

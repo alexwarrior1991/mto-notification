@@ -1,0 +1,32 @@
+{
+  "operationId": "d7b837f7-2bf0-395e-900b-981d271dc599",
+  "referenceId": "qualification-a1000000-0000-4000-8000-000000000011",
+  "origin": "mto-resources",
+  "creationDate": "2026-10-16T09:00:00Z",
+  "eventType": "RESOURCES_QUALIFICATION_EXPIRED",
+  "data": {
+    "entityName": "qualification",
+    "entityId": "a1000000-0000-4000-8000-000000000011",
+    "eventName": "expired",
+    "values": {
+      "personId": "c0000000-0000-4000-8000-000000000003",
+      "personCode": "PER-000003",
+      "fullName": "Yossi Cohen",
+      "username": "equipo.jefe",
+      "qualificationCode": "LIC-C",
+      "qualificationName": "Driving licence C",
+      "kind": "DRIVING_LICENCE",
+      "expiresOn": "2026-10-15",
+      "daysLeft": -1,
+      "teamCode": "A",
+      "leader": null
+    }
+  },
+  "messageHash": "fef10aebaba801cfa2c29fbe790e5da4c2a0ed9e9e157a41b6818b2c81052fe7",
+  "actor": {
+    "id": null,
+    "username": null,
+    "kind": "SYSTEM"
+  },
+  "correlationId": null
+}

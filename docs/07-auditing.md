@@ -31,7 +31,7 @@ filas y como mucho 50 lotes por tabla y pasada, cada lote en su transacción:
 | Qué | Cuánto |
 |---|---|
 | `activity_event` `ACCESS` y `SYSTEM` | 90 días desde `recorded_at` |
-| `activity_event` `USERS`, `CONFIGURATION`, `MAINTENANCE`, `STOCK` | 400 días |
+| `activity_event` `USERS`, `CONFIGURATION`, `MAINTENANCE`, `STOCK`, `FIELD`, `RESOURCES` | 400 días |
 | `notification` (y con ella audiencias, recibos y entregas, en cascada) | 180 días |
 | `inbox_message` procesados | 7 días |
 | `activity_burst` cerradas, `rule_throttle` vencidos | 1 día |

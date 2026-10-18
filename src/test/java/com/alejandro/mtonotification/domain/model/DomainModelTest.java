@@ -29,6 +29,25 @@ class DomainModelTest {
         assertEquals(ActivityCategory.ACCESS, ActivityCategory.ofType(ActivityTypes.ACCESS_LOGIN_STREAK));
         assertEquals(ActivityCategory.CONFIGURATION, ActivityCategory.ofType(ActivityTypes.masterDataType("profile", "updated")));
         assertTrue(ActivityTypes.isKnown("configuration.section-insulator.deleted"));
+        assertTrue(ActivityTypes.isKnown("configuration.track-access-point.updated"), "el punto de acceso a la via, V28 de mto-configuration");
+        assertEquals(ActivityCategory.RESOURCES, ActivityCategory.ofType(ActivityTypes.RESOURCES_VEHICLE_UPDATED));
+        assertTrue(ActivityTypes.isKnown("resources.team.deactivated"));
+    }
+
+    @Test
+    void theExpiriesAndTheInstrumentsOfResourcesAreResourcesTypes() {
+        for (String type : List.of(ActivityTypes.RESOURCES_INSTRUMENT_CREATED, ActivityTypes.RESOURCES_INSTRUMENT_UPDATED,
+                ActivityTypes.RESOURCES_INSTRUMENT_DEACTIVATED, ActivityTypes.RESOURCES_QUALIFICATION_EXPIRING,
+                ActivityTypes.RESOURCES_QUALIFICATION_EXPIRED, ActivityTypes.RESOURCES_VEHICLE_DOCUMENT_EXPIRING,
+                ActivityTypes.RESOURCES_VEHICLE_DOCUMENT_EXPIRED, ActivityTypes.RESOURCES_CALIBRATION_EXPIRING,
+                ActivityTypes.RESOURCES_CALIBRATION_EXPIRED)) {
+            assertTrue(ActivityTypes.isKnown(type), type);
+            assertEquals(ActivityCategory.RESOURCES, ActivityCategory.ofType(type), type);
+            assertEquals(Optional.of(ActivityCategory.RESOURCES), ActivityTypes.categoryOf(type), type);
+        }
+        assertEquals("resources.vehicle-document.expired", ActivityTypes.RESOURCES_VEHICLE_DOCUMENT_EXPIRED,
+                "el nombre de la entidad con su guion, como la clave de enrutado mto.resources.vehicle-document.expired");
+        assertTrue(EventTypeMatcher.of(List.of("resources.calibration.*")).matches(ActivityTypes.RESOURCES_CALIBRATION_EXPIRING));
     }
 
     @Test

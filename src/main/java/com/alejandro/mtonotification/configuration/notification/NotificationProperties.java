@@ -88,7 +88,7 @@ public record NotificationProperties(
             sampleSize = sampleSize <= 0 ? 20 : sampleSize;
             closeFixedDelay = closeFixedDelay == null ? Duration.ofSeconds(10) : closeFixedDelay;
             // Sin valor (ni en el YAML ni en un test que construye el record a mano): lo que documenta
-            // docs/02: se agregan las altas y modificaciones de las ocho entidades, y van directas las
+            // docs/02: se agregan las altas y modificaciones de las nueve entidades, y van directas las
             // bajas de la infraestructura y el alta de un paquete. Una lista vacia explicita es «nada».
             directDeletions = directDeletions == null ? DEFAULT_DIRECT_DELETIONS : normalize(directDeletions);
             directCreations = directCreations == null ? DEFAULT_DIRECT_CREATIONS : normalize(directCreations);
@@ -150,7 +150,7 @@ public record NotificationProperties(
             cron = cron == null || cron.isBlank() ? "0 17 3 * * *" : cron;
             batchSize = batchSize <= 0 ? 1000 : batchSize;
             maxBatchesPerRun = maxBatchesPerRun <= 0 ? 50 : maxBatchesPerRun;
-            activity = activity == null ? new ActivityRetention(null, null, null, null, null, null, null) : activity;
+            activity = activity == null ? new ActivityRetention(null, null, null, null, null, null, null, null) : activity;
             notifications = notifications == null ? Duration.ofDays(180) : notifications;
             inbox = inbox == null ? Duration.ofDays(7) : inbox;
             bursts = bursts == null ? Duration.ofDays(1) : bursts;
@@ -159,7 +159,7 @@ public record NotificationProperties(
     }
 
     public record ActivityRetention(Duration access, Duration users, Duration configuration, Duration maintenance,
-                                    Duration stock, Duration field, Duration system) {
+                                    Duration stock, Duration field, Duration resources, Duration system) {
         public ActivityRetention {
             access = access == null ? Duration.ofDays(90) : access;
             users = users == null ? Duration.ofDays(400) : users;
@@ -167,6 +167,7 @@ public record NotificationProperties(
             maintenance = maintenance == null ? Duration.ofDays(400) : maintenance;
             stock = stock == null ? Duration.ofDays(400) : stock;
             field = field == null ? Duration.ofDays(400) : field;
+            resources = resources == null ? Duration.ofDays(400) : resources;
             system = system == null ? Duration.ofDays(90) : system;
         }
     }

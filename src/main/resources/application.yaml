@@ -3,6 +3,24 @@ spring:
     name: mto-notification
   profiles:
     default: ${SPRING_PROFILES_DEFAULT:dev}
+
+  # Hilos virtuales: las peticiones de Tomcat, los @Scheduled (el lector de Keycloak, el cierre de
+  # rafagas, el despachador, la purga) y los consumidores de RabbitMQ esperan a la base, al broker, a
+  # Keycloak o al SMTP sin ocupar un hilo del sistema operativo cada uno, y el circuito de las llamadas a
+  # Keycloak tambien (KeycloakCircuitBreakerExecutorConfiguration). Los planificadores ya no comparten un
+  # pool de cuatro: cada pasada corre en su hilo y ninguno espera a otro. El hilo del despacho inmediato
+  # (delivery-dispatch) sigue siendo uno solo a proposito: funde las peticiones seguidas en una pasada.
+  # Con false, todo vuelve a hilos de plataforma.
+  threads:
+    virtual:
+      enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true}
+
+  # El limite real de concurrencia: sin el tope de 200 hilos de Tomcat, lo que espera es la conexion.
+  # El PostgreSQL de mto-platform es uno para todos los servicios (max_connections 100 por defecto),
+  # asi que la suma de los pools de todas las instancias tiene que quedar por debajo.
+  datasource:
+    hikari:
+      maximum-pool-size: ${DATABASE_POOL_MAX_SIZE:10}
   # La API es un resource server: no emite tokens ni guarda usuarios, solo valida los que emite
   # Keycloak. El JWK Set se descarga de forma perezosa, con lo que un Keycloak que aun no responde
   # no impide arrancar.
@@ -61,13 +79,6 @@ spring:
           initial-interval: 1s
           multiplier: 2
           max-interval: 10s
-
-  # Los planificadores (lector de Keycloak, cierre de rafagas, despacho, purga) no pueden esperarse
-  # entre si: el lector habla con la red.
-  task:
-    scheduling:
-      pool:
-        size: ${SPRING_TASK_SCHEDULING_POOL_SIZE:4}
 
   # Timeouts del RestClient que habla con la Admin API de Keycloak. Claves en plural de Boot 4.1.
   http:
@@ -252,6 +263,16 @@ app:
         dead-letter-queue: ${APP_RABBITMQ_FIELD_DEAD_LETTER_QUEUE:mto.notification.field.queue.dlq}
         dead-letter-routing-key: ${APP_RABBITMQ_FIELD_DEAD_LETTER_ROUTING_KEY:mto.notification.field.queue.dlq}
         listener-enabled: ${APP_RABBITMQ_FIELD_LISTENER_ENABLED:true}
+      # Lo que mto-resources cuenta del personal, los equipos y la flota (docs/06-messaging.md de ese
+      # repositorio): altas, cambios y bajas. Lo republicado (republished: true) no se registra.
+      resources:
+        exchange: ${APP_RABBITMQ_RESOURCES_EXCHANGE:mto.resources.exchange}
+        routing-key: "${APP_RABBITMQ_RESOURCES_ROUTING_KEY:mto.resources.#}"
+        queue: ${APP_RABBITMQ_RESOURCES_QUEUE:mto.notification.resources.queue}
+        dead-letter-exchange: ${APP_RABBITMQ_RESOURCES_DEAD_LETTER_EXCHANGE:mto.notification.resources.queue.dlx}
+        dead-letter-queue: ${APP_RABBITMQ_RESOURCES_DEAD_LETTER_QUEUE:mto.notification.resources.queue.dlq}
+        dead-letter-routing-key: ${APP_RABBITMQ_RESOURCES_DEAD_LETTER_ROUTING_KEY:mto.notification.resources.queue.dlq}
+        listener-enabled: ${APP_RABBITMQ_RESOURCES_LISTENER_ENABLED:true}
 
   # La Admin API de Keycloak: el lector de eventos de acceso y de administracion, y el directorio
   # con el que se resuelven las direcciones de una audiencia. Todo con la cuenta de servicio
@@ -362,6 +383,7 @@ app:
         maintenance: P400D
         stock: P400D
         field: P400D
+        resources: P400D
         system: P90D
       notifications: P180D
       inbox: P7D

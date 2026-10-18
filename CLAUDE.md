@@ -35,7 +35,9 @@ TEST_DATABASE_USERNAME=... TEST_DATABASE_PASSWORD=... ./mvnw verify   # sin Dock
 ```
 
 Entorno local: `cd ../mto-platform && docker compose --profile all up -d && ./keycloak/apply-partials.sh`.
-Perfiles `dev` (por defecto), `test`, `prod`. Puerto **8086** (`dev`); el contenedor escucha en 8080
+Hilos virtuales activos (`SPRING_THREADS_VIRTUAL_ENABLED`): el límite es el pool de conexiones
+(`DATABASE_POOL_MAX_SIZE`, 10), y el circuito `keycloak` llama en un hilo virtual
+(`KeycloakCircuitBreakerExecutorConfiguration`). Perfiles `dev` (por defecto), `test`, `prod`. Puerto **8086** (`dev`); el contenedor escucha en 8080
 y `mto-platform` lo publica en 8086. Detrás del gateway el prefijo público es `/api/notifications`.
 
 - Flyway corre al arrancar sobre `src/main/resources/db/migration`; Hibernate es `ddl-auto: validate`
@@ -58,7 +60,7 @@ Las mismas tres capas que `mto-maintenance` bajo `com.alejandro.mtonotification`
   o `KeycloakEventsPollerImpl` → `InboxMessageServiceImpl` (`IdempotentSourceEventProcessor`) →
   `DispatchingSourceEventHandler` → un `ActivitySourceAdapter` por fuente de RabbitMQ
   (`MasterDataSourceAdapter`, `ConfigurationSourceAdapter`, `UsersSourceAdapter`,
-  `MaintenanceSourceAdapter`, `StockSourceAdapter`, `FieldSourceAdapter`; los de Keycloak,
+  `MaintenanceSourceAdapter`, `StockSourceAdapter`, `FieldSourceAdapter`, `ResourcesSourceAdapter`; los de Keycloak,
   `KeycloakLoginEventAdapter` y `KeycloakAdminEventAdapter`, los llama el lector) →
   `ActivityIngestorImpl` (`insert ... on conflict do nothing`; si insertó: `RuleEngineImpl` y los
   `DerivedEventDetector`, hoy `FailedLoginStreakDetector` y `UsersChangeCorrelator`) →
@@ -130,17 +132,24 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
   `values`) y el tipo de la línea sale de ahí (`<categoría>.<entityName>.<eventName>`), como la
   clave de enrutado; `users.admin.*` es de Keycloak y un productor que lo use va a la DLQ. Los
   ejemplos que cada productor versiona (`docs/messaging/examples/` de `mto-configuration`,
-  `mto-users`, `mto-maintenance`, `mto-stock` y `mto-field`) están copiados en
+  `mto-users`, `mto-maintenance`, `mto-stock`, `mto-field` y `mto-resources`) están copiados en
   `src/test/resources/contracts/<productor>/` y son lo que `BusinessLayerTest` y
   `MessagingLayerTest` hacen pasar por los adaptadores: un cambio de contrato se copia aquí en el
-  mismo cambio. `MaintenanceSourceAdapter`, `StockSourceAdapter` y `FieldSourceAdapter` guardan el
+  mismo cambio. `MaintenanceSourceAdapter`, `StockSourceAdapter`, `FieldSourceAdapter` y
+  `ResourcesSourceAdapter` guardan el
   `values` entero (el productor ya lo publica por lista blanca y sin secretos) y ponen la gravedad
   por el hecho (urgente, crítico, inseguro, un desalojo ordenado, un equipo que no lo acusa a tiempo
   o que dice que no → `CRITICAL`; bajo mínimo, una reserva tocada por alguien distinto de quien la
-  creó, un ajuste negativo, una posesión cerrada a la fuerza → `WARNING`); las reglas leen
+  creó, un ajuste negativo, una posesión cerrada a la fuerza, una baja de personal, equipo, vehículo o
+  instrumento, un vehículo que deja de estar disponible, una cualificación, un documento de vehículo o
+  una calibración a punto de caducar → `WARNING`; caducados → `CRITICAL`); lo que `mto-resources`
+  republica (`republished: true`) no se registra; las reglas leen
   `payload.type`, `payload.to`, `payload.assignedUser`, `payload.stockErrorCode`,
-  `payload.createdBy`, `payload.direction`, `payload.accepted`, `payload.allClear`... y
-  las variables `maintenance-service-account` y `large-adjustment-threshold`.
+  `payload.createdBy`, `payload.direction`, `payload.accepted`, `payload.allClear`,
+  `payload.teamLeaderUsername`, `payload.leader?.username`, `payload.availabilityChanged`,
+  `payload.username`, `payload.personId`, `payload.vehicleId`, `payload.daysLeft`... y
+  las variables `maintenance-service-account` y `large-adjustment-threshold`. Una audiencia
+  repetida en una regla se funde en una: una caducidad avisa una vez a la persona aunque sea el jefe.
 - **Un cambio hecho desde `mto-users` se registra una vez con nombre**: su evento (con la persona)
   y el de administración de Keycloak del mismo cambio (con `mto-users-svc`) se funden marcando el
   de Keycloak con `superseded_by` (`UsersChangeCorrelator`, ventana
@@ -165,11 +174,11 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
 Una clase por capa; se añaden métodos, no clases: `DomainModelTest`, `RulesConfigurationTest` (el
 YAML real carga; una regla rota impide arrancar), `BusinessLayerTest` (motor, ingesta, detector de
 rachas, datos maestros, los trabajos de configuración, las acciones de `mto-users` y los eventos de
-`mto-maintenance`, de `mto-stock` y de `mto-field` con los ejemplos de `src/test/resources/contracts`,
-las reglas de mantenimiento, de almacén y de campo enviadas pasando por el motor real, el correlador, adaptadores y lector
+`mto-maintenance`, de `mto-stock`, de `mto-field` y de `mto-resources` con los ejemplos de `src/test/resources/contracts`,
+las reglas de mantenimiento, de almacén, de campo y de recursos enviadas pasando por el motor real, el correlador, adaptadores y lector
 de Keycloak, despachador y resolutor, y el filtro de IP de los accesos, que nunca consulta el DNS;
 con dobles), `MessagingLayerTest` (el JSON literal de `mto-configuration`
-y los ejemplos de cada productor, consumidor, inbox, firma y topología de las seis fuentes con
+y los ejemplos de cada productor, consumidor, inbox, firma y topología de las siete fuentes con
 `ApplicationContextRunner`), `KeycloakEventsClientTest` (`MockRestServiceServer`),
 `MailLayerTest` (GreenMail), `MapperLayerTest`, `DtoValidationTest`, `JpaEntityModelTest`,
 `RestControllerLayerTest` (`@WebMvcTest` de los cuatro controladores con la cadena real y
@@ -180,7 +189,8 @@ y los ejemplos de cada productor, consumidor, inbox, firma y topología de las s
 el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera y la de un trabajo que pasa de los diez minutos sin partirse, frenos, arrendamiento, purga) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
 entregas), los tres `@DataJpaTest` que recogen los servicios package-private con una
 `@TestConfiguration` anidada y `@ComponentScan` por nombre; `MtoNotificationApplicationTests`
-(contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean);
+(contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean;
+y los hilos virtuales con su pool y el circuito `keycloak` llamando en uno);
 y en `verify`, `KeycloakAuthorizationIT` y `KeycloakEventsIT` (Keycloak 26.1 en Testcontainers con
 `src/test/resources/keycloak/mto-notification-test-realm.json`, la misma forma que `keycloak/`,
 con la cuenta de servicio, copiado en el contenedor como `mto-realm.json` porque `DirImportProvider`

@@ -109,16 +109,41 @@ public final class ActivityTypes {
     public static final String FIELD_POSSESSION_EVACUATION_UNACKNOWLEDGED = "field.possession.evacuation-unacknowledged";
     public static final String FIELD_POSSESSION_CLEAR_OF_TRACK = "field.possession.clear-of-track";
 
+    // --- RESOURCES (mto-resources) ---
+    public static final String RESOURCES_PERSON_CREATED = "resources.person.created";
+    public static final String RESOURCES_PERSON_UPDATED = "resources.person.updated";
+    public static final String RESOURCES_PERSON_DEACTIVATED = "resources.person.deactivated";
+    public static final String RESOURCES_TEAM_CREATED = "resources.team.created";
+    public static final String RESOURCES_TEAM_UPDATED = "resources.team.updated";
+    public static final String RESOURCES_TEAM_DEACTIVATED = "resources.team.deactivated";
+    public static final String RESOURCES_VEHICLE_CREATED = "resources.vehicle.created";
+    public static final String RESOURCES_VEHICLE_UPDATED = "resources.vehicle.updated";
+    public static final String RESOURCES_VEHICLE_DEACTIVATED = "resources.vehicle.deactivated";
+    public static final String RESOURCES_INSTRUMENT_CREATED = "resources.instrument.created";
+    public static final String RESOURCES_INSTRUMENT_UPDATED = "resources.instrument.updated";
+    public static final String RESOURCES_INSTRUMENT_DEACTIVATED = "resources.instrument.deactivated";
+    // Las caducidades: el vigilante diario de mto-resources, una vez por fecha de caducidad.
+    public static final String RESOURCES_QUALIFICATION_EXPIRING = "resources.qualification.expiring";
+    public static final String RESOURCES_QUALIFICATION_EXPIRED = "resources.qualification.expired";
+    public static final String RESOURCES_VEHICLE_DOCUMENT_EXPIRING = "resources.vehicle-document.expiring";
+    public static final String RESOURCES_VEHICLE_DOCUMENT_EXPIRED = "resources.vehicle-document.expired";
+    public static final String RESOURCES_CALIBRATION_EXPIRING = "resources.calibration.expiring";
+    public static final String RESOURCES_CALIBRATION_EXPIRED = "resources.calibration.expired";
+
     // --- SYSTEM (este servicio) ---
     public static final String SYSTEM_BROADCAST = "system.broadcast";
     public static final String SYSTEM_TEST_EMAIL = "system.test-email";
     public static final String SYSTEM_SOURCE_STALLED = "system.source.stalled";
     public static final String SYSTEM_DELIVERY_DEAD = "system.delivery.dead";
 
-    /** Las ocho entidades de datos maestros que publica mto-configuration; sus tipos son {@code configuration.<entidad>.<operacion>}. */
+    /**
+     * Las nueve entidades de datos maestros que publica mto-configuration; sus tipos son
+     * {@code configuration.<entidad>.<operacion>}. El punto de acceso a la via ({@code track-access-point},
+     * V28 de mto-configuration) es la novena.
+     */
     public static final Set<String> MASTER_DATA_ENTITIES = Set.of(
             "execution-package", "station", "track", "profile",
-            "cantilever", "steady-arm", "disconnector", "section-insulator");
+            "cantilever", "steady-arm", "disconnector", "section-insulator", "track-access-point");
 
     public static final Set<String> MASTER_DATA_OPERATIONS = Set.of("created", "updated", "deleted");
 
@@ -194,6 +219,13 @@ public final class ActivityTypes {
                 FIELD_POSSESSION_OPENED, FIELD_POSSESSION_CLOSED, FIELD_POSSESSION_EVACUATION_ISSUED,
                 FIELD_POSSESSION_EVACUATION_ACKNOWLEDGED, FIELD_POSSESSION_EVACUATION_UNACKNOWLEDGED,
                 FIELD_POSSESSION_CLEAR_OF_TRACK,
+                RESOURCES_PERSON_CREATED, RESOURCES_PERSON_UPDATED, RESOURCES_PERSON_DEACTIVATED,
+                RESOURCES_TEAM_CREATED, RESOURCES_TEAM_UPDATED, RESOURCES_TEAM_DEACTIVATED,
+                RESOURCES_VEHICLE_CREATED, RESOURCES_VEHICLE_UPDATED, RESOURCES_VEHICLE_DEACTIVATED,
+                RESOURCES_INSTRUMENT_CREATED, RESOURCES_INSTRUMENT_UPDATED, RESOURCES_INSTRUMENT_DEACTIVATED,
+                RESOURCES_QUALIFICATION_EXPIRING, RESOURCES_QUALIFICATION_EXPIRED,
+                RESOURCES_VEHICLE_DOCUMENT_EXPIRING, RESOURCES_VEHICLE_DOCUMENT_EXPIRED,
+                RESOURCES_CALIBRATION_EXPIRING, RESOURCES_CALIBRATION_EXPIRED,
                 SYSTEM_BROADCAST, SYSTEM_TEST_EMAIL, SYSTEM_SOURCE_STALLED, SYSTEM_DELIVERY_DEAD}) {
             types.put(type, ActivityCategory.ofType(type));
         }

@@ -1,0 +1,30 @@
+{
+  "operationId": "b0000000-0000-4000-8000-000000000010",
+  "referenceId": "instrument-a3000000-0000-4000-8000-000000000012",
+  "origin": "mto-resources",
+  "creationDate": "2026-10-16T09:00:00Z",
+  "eventType": "RESOURCES_INSTRUMENT_CREATED",
+  "data": {
+    "entityName": "instrument",
+    "entityId": "a3000000-0000-4000-8000-000000000012",
+    "eventName": "created",
+    "values": {
+      "code": "PT-012",
+      "name": "Earthing pole 25 kV",
+      "kind": "EARTHING_POLE",
+      "serialNumber": "EP25-88412",
+      "calibratedOn": "2026-04-01",
+      "calibrationExpiresOn": "2027-03-31",
+      "active": true,
+      "version": 0,
+      "republished": false
+    }
+  },
+  "messageHash": "d1e64e32864420d48043c9c9c0e0577aa9d8ef473862934fb792542ec9608235",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000051",
+    "username": "recursos.gestor",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-555555555555"
+}

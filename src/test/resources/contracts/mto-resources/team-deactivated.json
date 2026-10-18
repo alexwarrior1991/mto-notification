@@ -1,0 +1,61 @@
+{
+  "operationId": "b0000000-0000-4000-8000-000000000006",
+  "referenceId": "team-d0000000-0000-4000-8000-000000000003",
+  "origin": "mto-resources",
+  "creationDate": "2026-10-16T09:00:00Z",
+  "eventType": "RESOURCES_TEAM_DEACTIVATED",
+  "data": {
+    "entityName": "team",
+    "entityId": "d0000000-0000-4000-8000-000000000003",
+    "eventName": "deactivated",
+    "values": {
+      "code": "A",
+      "name": "Team A",
+      "discipline": "MAINTENANCE",
+      "active": false,
+      "parentId": "d0000000-0000-4000-8000-000000000002",
+      "departmentId": "0195b000-0000-7000-8000-000000000002",
+      "executionPackageIds": [
+        4,
+        5,
+        6
+      ],
+      "defaultVehicle": {
+        "id": "f0000000-0000-4000-8000-000000000007",
+        "code": "RR-07"
+      },
+      "leader": {
+        "personId": "c0000000-0000-4000-8000-000000000003",
+        "code": "PER-000003",
+        "fullName": "Yossi Cohen",
+        "username": "equipo.jefe",
+        "category": "TEAM_LEADER"
+      },
+      "supervisor": {
+        "personId": "c0000000-0000-4000-8000-000000000002",
+        "code": "PER-000002",
+        "fullName": "Dana Mizrahi",
+        "username": "equipo.supervisor",
+        "category": "SUPERVISOR"
+      },
+      "chiefSupervisor": {
+        "personId": "c0000000-0000-4000-8000-000000000001",
+        "code": "PER-000001",
+        "fullName": "Moshe Peretz",
+        "username": "equipo.jefe-supervisores",
+        "category": "CHIEF_SUPERVISOR"
+      },
+      "members": [],
+      "linemen": 0,
+      "version": 4,
+      "republished": false
+    }
+  },
+  "messageHash": "4753fce7fcafccc4515a5536d58c46e9900ba8f892415a664b9e2697cbff8d98",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000051",
+    "username": "recursos.gestor",
+    "kind": "PERSON"
+  },
+  "correlationId": "8c3b8c1a-1111-4222-8333-555555555555"
+}

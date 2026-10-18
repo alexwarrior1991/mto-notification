@@ -1,0 +1,41 @@
+{
+  "operationId": "7a1c2b3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "referenceId": "track-access-point-77",
+  "origin": "mto-configuration",
+  "creationDate": "2026-10-17T07:00:00Z",
+  "eventType": "MASTER_DATA_TRACK_ACCESS_POINT_UPDATED",
+  "data": {
+    "entityName": "track-access-point",
+    "entityId": "77",
+    "operation": "UPDATED",
+    "values": {
+      "id": 77,
+      "name": "Acceso km 110+176",
+      "enabled": true,
+      "kp": 110176.000,
+      "kind": "PREPARED_ACCESS",
+      "side": "LEFT",
+      "roadRailAccess": true,
+      "maxAxleLoadT": 12.500,
+      "maxGrossWeightT": 40.000,
+      "latitude": 31.669342,
+      "longitude": 34.574119,
+      "station": {
+        "id": 12,
+        "name": "ASHKELON"
+      },
+      "track": {
+        "id": 3,
+        "name": "TRACK 1",
+        "executionPackageId": 14
+      }
+    }
+  },
+  "messageHash": "41c3194439d788a8202a8953408632e87294245a948a5ced6f68582cd5b8c202",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000001",
+    "username": "config.editor",
+    "kind": "PERSON"
+  },
+  "correlationId": "5d2e7f10-2222-4333-8444-555555555555"
+}
