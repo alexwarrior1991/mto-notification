@@ -48,10 +48,11 @@
           "reference": "ITV-2026-118",
           "expiresOn": "2027-02-28"
         }
-      ]
+      ],
+      "unavailable": []
     }
   },
-  "messageHash": "65af74851053a28d900b483323b59e13b27cbb1d2aaf2ca1cd33f27a3e15d8ff",
+  "messageHash": "054957331f6870224cef9dd8703df46db2ab16d995c4b8690f9da5b1b4ac8844",
   "actor": {
     "id": "6f1b1c8e-0000-4000-8000-000000000051",
     "username": "recursos.gestor",

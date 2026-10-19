@@ -28,10 +28,11 @@
           "drivingLicence": "B",
           "expiresOn": null
         }
-      ]
+      ],
+      "unavailable": []
     }
   },
-  "messageHash": "dd61c315afe74e749b4a846b03cfecc4c92196a35cf11a9163cb0a375301599f",
+  "messageHash": "bf8da1532a49f3e79f318341f623e917104b44b187d42f80345b5ff9622c765a",
   "actor": {
     "id": "6f1b1c8e-0000-4000-8000-000000000051",
     "username": "recursos.gestor",

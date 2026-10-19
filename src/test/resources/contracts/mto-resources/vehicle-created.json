@@ -37,10 +37,11 @@
       "version": 0,
       "availabilityChanged": false,
       "republished": false,
-      "documents": []
+      "documents": [],
+      "unavailable": []
     }
   },
-  "messageHash": "495b133d89723eb2c552a345797a21bb55645d6b68dd5e99f54af46c1ef2871d",
+  "messageHash": "cfa19a562a621adce29f48df305f613b25fc7f98812519a3589d90fbff035563",
   "actor": {
     "id": "6f1b1c8e-0000-4000-8000-000000000051",
     "username": "recursos.gestor",
