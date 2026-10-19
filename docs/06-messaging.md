@@ -166,7 +166,9 @@ de etiqueta (`PER-000003 Yossi Cohen`, `A Team A`, `RR-07 Unimog 7`, `VD-03 Volt
 Del `values` se guarda todo (nunca trae el teléfono): el de un equipo lleva su `leader`, su
 `supervisor`, su `chiefSupervisor` y sus `members`, cada uno con su `username`, que es lo que leen las
 reglas; el de un vehículo, su `type` (con `requiredDriverQualification`), su `operationalStatus`,
-`available`, `availabilityChanged` y sus `documents`; el de una persona, sus `qualifications`; el de un
+`available`, `availabilityChanged`, sus `documents` y cuándo no está disponible (`unavailable`, las
+reparaciones que lo inmovilizan); el de una persona, sus `qualifications` y cuándo no está (`unavailable`,
+los periodos de sus ausencias, sin la clase: `mto-resources` no la publica); el de un
 instrumento, su `kind`, su `serialNumber` y su calibración (`calibratedOn`, `calibrationExpiresOn`).
 Lo que trae `republished: true` no se registra: es lo que `POST /actuator/republish` de
 `mto-resources` vuelve a contar para poner al día a un consumidor, y nada ha cambiado.

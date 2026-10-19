@@ -34,10 +34,16 @@
           "drivingLicence": null,
           "expiresOn": "2027-03-31"
         }
+      ],
+      "unavailable": [
+        {
+          "from": "2026-11-02",
+          "to": "2026-11-13"
+        }
       ]
     }
   },
-  "messageHash": "198c0862a386cebe9cb6fb5a62307f98b1296932459a8a9d08930df3c180e9e7",
+  "messageHash": "456d33dd15b9a53d6a5e52e08783be140386b20ef069d897d5be298faf89926a",
   "actor": {
     "id": "6f1b1c8e-0000-4000-8000-000000000051",
     "username": "recursos.gestor",
