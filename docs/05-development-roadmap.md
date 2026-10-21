@@ -36,11 +36,35 @@
   con correo y freno de un día por material, la reserva de mantenimiento tocada por otro al
   responsable de mantenimiento, el ajuste negativo grande al almacén), con los cuatro ejemplos del
   productor como fixtures de contrato.
+- **Fase 5** (`mto-backoffice` y `mto-frontend`): la campana con el contador, la bandeja
+  (`notificaciones`), el registro (`actividad`) y los accesos (`actividad/accesos`), a la par en las
+  dos aplicaciones.
+- **Fase 6** (`mto-resources`): la categoría `RESOURCES` (`V3`), la cola de `mto-resources`,
+  `ResourcesSourceAdapter` (que no registra lo republicado, `republished: true`) y sus reglas: el
+  equipo cambiado o desactivado a su jefe, el vehículo que deja de estar disponible a los
+  responsables, y las cualificaciones, los documentos de vehículo y las calibraciones a punto de
+  caducar o caducados (lo caducado, `CRITICAL` y por correo). El jefe del turno recibe también el
+  aviso de su turno iniciado, cerrado o cancelado por otra persona (`maintenance-shift-team-leader`),
+  y el punto de acceso a la vía (`track-access-point`) es una entidad más de los datos maestros. Los
+  ejemplos de `mto-resources`, copiados como fixtures de contrato.
+- **Hilos virtuales**: Tomcat, los `@Scheduled` y los listeners, con el pool de conexiones como
+  límite (`DATABASE_POOL_MAX_SIZE`), y el circuito `keycloak` llamando en un hilo virtual
+  (`KeycloakCircuitBreakerExecutorConfiguration`).
 
 ## Siguiente
 
-- **Fase 5** (`mto-backoffice`): la campana con el contador, la bandeja (`notificaciones`) y el
-  registro (`actividad`).
+Lo que el diseño dejaba preparado y sigue pendiente:
+
+- Canal **push**: una implementación más de `DeliveryChannel` y una tabla de dispositivos
+  (`PUT/DELETE /devices/{token}`); el canal es un `varchar` validado por el registro, sin
+  migración de enumerado.
+- Destinatarios por **equipo** o **zona**: dos `kind` de audiencia reservados; su casado necesita
+  un dato que no está en el token de este servicio (el equipo o la zona de la persona). El equipo
+  viaja en el claim `groups` del token de `mto-frontend`, con grupos que se llaman como el código del
+  equipo (`A`, `B`), así que `TEAM:` podría leer de ahí; `mto-field` liga primero por la dotación
+  del turno y usa el grupo solo en los turnos sin dotación.
+- Avisos hacia el campo (turno asignado, orden urgente en su zona): mismo vocabulario de eventos;
+  solo falta el canal y la audiencia.
 
 ## `mto-field`
 
@@ -51,14 +75,5 @@ que pasa en una posesión (abierta y cerrada, el desalojo con sus acuses, el equ
 tiempo, la salida de vía de cada equipo) por `mto.field.exchange`, con la categoría `FIELD` (`V2`),
 el adaptador `FieldSourceAdapter` y las reglas `field-*`, que avisan a `mto-field-supervisor` (que
 desde entonces tiene bandeja) y a `mto-maintenance-manager` ([`06-messaging.md`](06-messaging.md)).
-Lo que el diseño dejaba preparado y sigue pendiente:
-
-- Canal **push**: una implementación más de `DeliveryChannel` y una tabla de dispositivos
-  (`PUT/DELETE /devices/{token}`); el canal es un `varchar` validado por el registro, sin
-  migración de enumerado.
-- Destinatarios por **equipo** o **zona**: dos `kind` de audiencia reservados; su casado necesita
-  un dato que no está en el token de este servicio (el equipo o la zona de la persona). El equipo
-  ya viaja en el claim `groups` del token de `mto-frontend`, que `mto-field` usa para ligar un
-  dispositivo a su equipo, así que `TEAM:` podría leer de ahí.
-- Avisos hacia el campo (turno asignado, orden urgente en su zona): mismo vocabulario de eventos;
-  solo falta el canal y la audiencia.
+Lo que dejaba preparado para el campo (el canal push y las audiencias por equipo y zona) está en
+*Siguiente*.
