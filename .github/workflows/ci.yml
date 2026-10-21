@@ -119,11 +119,14 @@ jobs:
       #
       # The container runs with --network host so that localhost means the same thing to it and to
       # the service container the runner published.
+      #
+      # It runs with an arbitrary UID in group 0 (--user), as OpenShift does under the restricted-v2
+      # SCC: starting as the Dockerfile's 1001 does not prove it starts as the one the cluster assigns.
       - name: Smoke test the image
         if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/master' }}
         run: |
           IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
-          docker run -d --name mto-notification-smoke --network host \
+          docker run -d --name mto-notification-smoke --user 1000680000:0 --network host \
             -e SPRING_PROFILES_ACTIVE=prod \
             -e SERVER_PORT=8080 \
             -e DATABASE_URL=jdbc:postgresql://localhost:5432/mto_notification \
