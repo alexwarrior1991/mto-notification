@@ -11,6 +11,7 @@ import com.alejandro.mtonotification.configuration.messaging.MessageSignatureMod
 import com.alejandro.mtonotification.configuration.messaging.MessageSignatureProperties;
 import com.alejandro.mtonotification.configuration.messaging.MessagingConfiguration;
 import com.alejandro.mtonotification.configuration.rabbitmq.RabbitMqConfiguration;
+import com.alejandro.mtonotification.configuration.rabbitmq.ConsumerQueueProperties;
 import com.alejandro.mtonotification.configuration.rabbitmq.SourceRabbitProperties;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.RabbitListenerContainerFactoryNames;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.SourceEventConsumer;
@@ -51,6 +52,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -465,6 +467,58 @@ class MessagingLayerTest {
         });
     }
 
+    /**
+     * Sin decir nada, las siete colas y sus DLQ se declaran exactamente como antes: clasicas, sin
+     * {@code x-queue-type} ni {@code x-delivery-limit}. Un argumento de mas haria que el broker
+     * rechazase la redeclaracion de una cola ya creada y se cayese toda la topologia.
+     */
+    @Test
+    void byDefaultEverySourceQueueAndItsDeadLetterAreClassicAndDeclaredAsBefore() {
+        contextRunner.run(context -> {
+            List<Queue> queues = context.getBean("sourceTopology", Declarables.class).getDeclarablesByType(Queue.class);
+            assertEquals(14, queues.size());
+            for (Queue queue : queues) {
+                if (queue.getName().endsWith(".dlq")) {
+                    assertEquals(Map.of(), queue.getArguments(), queue.getName());
+                } else {
+                    assertEquals(Set.of(SourceRabbitMqNames.ARG_DEAD_LETTER_EXCHANGE, SourceRabbitMqNames.ARG_DEAD_LETTER_ROUTING_KEY),
+                            queue.getArguments().keySet(), queue.getName());
+                }
+            }
+        });
+    }
+
+    /**
+     * Con {@code app.rabbitmq.queues.type=quorum}, que es como corre en OpenShift, las siete colas son
+     * quorum con su limite de entregas (5, o el que se diga) y sus DLQ tambien, sin limite.
+     */
+    @Test
+    void withQuorumEverySourceQueueCarriesItsDeliveryLimitAndItsDeadLetterIsQuorumToo() {
+        contextRunner.withPropertyValues("app.rabbitmq.queues.type=quorum").run(context -> {
+            List<Queue> queues = context.getBean("sourceTopology", Declarables.class).getDeclarablesByType(Queue.class);
+            assertEquals(14, queues.size());
+            for (Queue queue : queues) {
+                if (queue.getName().endsWith(".dlq")) {
+                    assertEquals(Map.of("x-queue-type", "quorum"), queue.getArguments(), queue.getName());
+                } else {
+                    assertEquals("quorum", queue.getArguments().get("x-queue-type"), queue.getName());
+                    assertEquals(ConsumerQueueProperties.DEFAULT_DELIVERY_LIMIT, queue.getArguments().get("x-delivery-limit"), queue.getName());
+                    assertNotNull(queue.getArguments().get(SourceRabbitMqNames.ARG_DEAD_LETTER_EXCHANGE), queue.getName());
+                }
+            }
+        });
+        contextRunner.withPropertyValues("app.rabbitmq.queues.type=QUORUM", "app.rabbitmq.queues.delivery-limit=3").run(context ->
+                assertTrue(context.getBean("sourceTopology", Declarables.class).getDeclarablesByType(Queue.class).stream()
+                        .filter(queue -> !queue.getName().endsWith(".dlq"))
+                        .allMatch(queue -> Integer.valueOf(3).equals(queue.getArguments().get("x-delivery-limit")))));
+    }
+
+    @Test
+    void aDeliveryLimitBelowOneDoesNotStart() {
+        contextRunner.withPropertyValues("app.rabbitmq.queues.type=quorum", "app.rabbitmq.queues.delivery-limit=0")
+                .run(context -> assertNotNull(context.getStartupFailure()));
+    }
+
     @Test
     void theListenerCanBeDisabledAloneAndTheWholeChannelWithTheMasterSwitch() {
         contextRunner.withPropertyValues("app.rabbitmq.sources.master-data.listener-enabled=false").run(context -> {
@@ -519,7 +573,7 @@ class MessagingLayerTest {
     }
 
     private static SourceEnvelope convert(String json) {
-        MessageConverter converter = new RabbitMqConfiguration(new SourceRabbitProperties(true, Map.of()))
+        MessageConverter converter = new RabbitMqConfiguration(new SourceRabbitProperties(true, Map.of()), new ConsumerQueueProperties(null, null))
                 .sourceMessageConverter(JsonMapper.builder().build());
         MessageProperties properties = new MessageProperties();
         properties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
