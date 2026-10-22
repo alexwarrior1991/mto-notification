@@ -77,7 +77,10 @@ Las mismas tres capas que `mto-maintenance` bajo `com.alejandro.mtonotification`
   `RestKeycloakDirectoryClient` sobre `RestClient`, circuito `keycloak`), `mail` (`EmailChannel`).
 - `configuration` — `security` (resource server de Keycloak, las mismas piezas que los hermanos;
   `CurrentUserService.getAudienceKeys()` da las claves de la bandeja), `web` (`CorrelationIdFilter`),
-  auditoría JPA, OpenAPI, `rabbitmq` (`SourceRabbitProperties`: una fuente por clave), `messaging`
+  auditoría JPA, OpenAPI, `rabbitmq` (`SourceRabbitProperties`: una fuente por clave; `ConsumerQueueProperties`: las colas de
+todas y sus DLQ, `classic` por defecto o `quorum` con `app.rabbitmq.queues.type`, como en OpenShift, con
+`x-delivery-limit` 5; con `classic` se declaran exactamente como antes, porque el broker rechaza un
+argumento nuevo en una cola que ya existe), `messaging`
   (firma), `keycloak` (`KeycloakProperties`, el cliente con la cuenta de servicio, el sondeo),
   `notification` (`NotificationProperties`), `mail`, `scheduling` (ráfagas, entregas, retención).
 

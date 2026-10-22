@@ -197,6 +197,13 @@ app:
   # conexion y la aplicacion arranca sin broker.
   rabbitmq:
     enabled: ${APP_RABBITMQ_ENABLED:true}
+    # Tipo de las colas de todas las fuentes y de sus DLQ: classic, por defecto y en local, o quorum,
+    # replicada entre los nodos de un RabbitMQ en cluster, como en OpenShift. El tipo de una cola que
+    # ya existe no cambia: hay que borrarla antes. delivery-limit solo cuenta con quorum (ver
+    # ConsumerQueueProperties).
+    queues:
+      type: ${APP_RABBITMQ_QUEUES_TYPE:classic}
+      delivery-limit: ${APP_RABBITMQ_QUEUES_DELIVERY_LIMIT:5}
     # Una fuente por emisor: su exchange y su routing key son contrato del emisor; la cola, su
     # DLX y su DLQ son de este servicio, que es quien consume.
     sources:

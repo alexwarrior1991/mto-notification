@@ -19,7 +19,6 @@ import org.springframework.amqp.core.Declarable;
 import org.springframework.amqp.core.Declarables;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
@@ -45,39 +44,43 @@ import java.util.Map;
  * {@code app.rabbitmq.enabled=false}: sin estos beans nadie abre una conexion.
  */
 @Configuration
-@EnableConfigurationProperties(SourceRabbitProperties.class)
+@EnableConfigurationProperties({SourceRabbitProperties.class, ConsumerQueueProperties.class})
 @ConditionalOnProperty(prefix = "app.rabbitmq", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class RabbitMqConfiguration {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RabbitMqConfiguration.class);
 
     private final SourceRabbitProperties properties;
+    private final ConsumerQueueProperties queues;
 
-    public RabbitMqConfiguration(SourceRabbitProperties properties) {
+    public RabbitMqConfiguration(SourceRabbitProperties properties, ConsumerQueueProperties queues) {
         this.properties = properties;
+        this.queues = queues;
     }
 
-    /** Exchange, cola, binding, DLX, DLQ y su binding, por fuente; el {@code RabbitAdmin} de Boot los declara. */
+    /**
+     * Exchange, cola, binding, DLX, DLQ y su binding, por fuente; el {@code RabbitAdmin} de Boot los
+     * declara. Las colas y sus DLQ son todas del tipo de {@link ConsumerQueueProperties}: clasicas, o
+     * quorum en un RabbitMQ en cluster.
+     */
     @Bean
     public Declarables sourceTopology() {
         List<Declarable> declarables = new ArrayList<>();
         for (Map.Entry<String, SourceRabbitProperties.Source> entry : properties.sources().entrySet()) {
             SourceRabbitProperties.Source source = entry.getValue();
             TopicExchange exchange = new TopicExchange(source.exchange(), true, false);
-            Queue queue = QueueBuilder.durable(source.queue())
-                    .withArgument(SourceRabbitMqNames.ARG_DEAD_LETTER_EXCHANGE, source.deadLetterExchange())
-                    .withArgument(SourceRabbitMqNames.ARG_DEAD_LETTER_ROUTING_KEY, source.deadLetterRoutingKey())
-                    .build();
+            Queue queue = queues.queue(source.queue(), source.deadLetterExchange(), source.deadLetterRoutingKey());
             DirectExchange deadLetterExchange = new DirectExchange(source.deadLetterExchange(), true, false);
-            Queue deadLetterQueue = QueueBuilder.durable(source.deadLetterQueue()).build();
+            Queue deadLetterQueue = queues.deadLetterQueue(source.deadLetterQueue());
             declarables.add(exchange);
             declarables.add(queue);
             declarables.add(BindingBuilder.bind(queue).to(exchange).with(source.routingKey()));
             declarables.add(deadLetterExchange);
             declarables.add(deadLetterQueue);
             declarables.add(BindingBuilder.bind(deadLetterQueue).to(deadLetterExchange).with(source.deadLetterRoutingKey()));
-            LOGGER.info("Source '{}': queue={} bound to {} with {}, dead letters to {} via {}", entry.getKey(), source.queue(),
-                    source.exchange(), source.routingKey(), source.deadLetterQueue(), source.deadLetterExchange());
+            LOGGER.info("Source '{}': {} queue={} bound to {} with {}, dead letters to {} via {}", entry.getKey(),
+                    queues.type(), source.queue(), source.exchange(), source.routingKey(), source.deadLetterQueue(),
+                    source.deadLetterExchange());
         }
         return new Declarables(declarables);
     }

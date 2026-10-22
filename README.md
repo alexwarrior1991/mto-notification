@@ -73,7 +73,11 @@ Hilos virtuales con `SPRING_THREADS_VIRTUAL_ENABLED` (`true`; `false` vuelve a h
 y el pool de conexiones con `DATABASE_POOL_MAX_SIZE` (10), que con ellos es el límite real: la suma
 de los pools de todos los servicios tiene que caber en el PostgreSQL de `mto-platform`.
 
-Interruptores: `APP_RABBITMQ_ENABLED=false` arranca sin broker, `APP_KEYCLOAK_EVENTS_ENABLED=false`
+Interruptores: `APP_RABBITMQ_ENABLED=false` arranca sin broker, `APP_RABBITMQ_QUEUES_TYPE=quorum`
+declara las colas de las fuentes y sus DLQ como quorum, para un RabbitMQ en clúster como en OpenShift
+(`classic` por defecto; una cola ya creada hay que borrarla para cambiarle el tipo;
+`APP_RABBITMQ_QUEUES_DELIVERY_LIMIT`, `5`, las entregas sin ack antes de la DLQ),
+`APP_KEYCLOAK_EVENTS_ENABLED=false`
 no sondea Keycloak (y arranca sin secreto), `APP_NOTIFICATION_EMAIL_ENABLED=false` deja los avisos
 en la bandeja, `APP_NOTIFICATION_DELIVERY_ENABLED`/`_BURST_CLOSE_ENABLED`/`_RETENTION_PURGE_ENABLED`
 apagan el trabajo de fondo en una instancia, `APP_SECURITY_EXPOSE_API_DOCS=true` publica Swagger

@@ -21,6 +21,18 @@ arranca sin broker. La firma se comprueba sobre los bytes recibidos antes de nad
 (`app.messaging.signature.mode`: `DISABLED`, `OPTIONAL`, `REQUIRED`; el secreto es el mismo que en
 `mto-configuration`).
 
+**Clásicas o quorum.** `app.rabbitmq.queues.type` (`ConsumerQueueProperties`) lo dice para las siete
+colas y sus DLQ a la vez: `classic` por defecto y en local (un solo nodo), `quorum` donde RabbitMQ
+corre en clúster, como en OpenShift (`APP_RABBITMQ_QUEUES_TYPE=quorum`), para que una cola sobreviva a
+la caída de un nodo. Con `classic` cada cola se declara exactamente como antes, sin `x-queue-type`:
+añadirle el argumento a una cola que ya existe sería otra declaración y el broker la rechazaría. Una
+cola quorum lleva `x-delivery-limit` (`app.rabbitmq.queues.delivery-limit`, 5): aquí nada rechazado se
+reencola (los reintentos ocurren dentro de una entrega y luego el mensaje va a la DLQ), así que el
+contador del broker solo sube cuando un mensaje vuelve sin ack porque el consumidor murió o perdió la
+conexión; cinco deja pasar un par de reinicios normales y para el mensaje que tumba al consumidor cada
+vez. Las DLQ son quorum también, sin límite. Cambiar el tipo de una cola que ya existe exige borrarla
+antes (parar el consumidor, dejar que se vacíe, borrarla y volver a desplegar).
+
 ## El sobre
 
 El de `mto-configuration` (`README_MESSAGING.md` de ese repositorio): `operationId`, `referenceId`,
