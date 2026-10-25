@@ -18,6 +18,9 @@ import com.alejandro.mtonotification.domain.model.Subject;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.ActivityBurst;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.ActivityBurstStatus;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.ActivityEvent;
+import com.alejandro.mtonotification.infrastructure.persistence.entity.DeliveryScope;
+import com.alejandro.mtonotification.infrastructure.persistence.entity.DeliveryStatus;
+import com.alejandro.mtonotification.infrastructure.persistence.entity.InboxMessageStatus;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.SourceCursor;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.SourceKind;
 import com.alejandro.mtonotification.infrastructure.persistence.specification.ActivityEventSpecification;
@@ -49,7 +52,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -187,6 +195,81 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
         assertEquals(1, activityEventRepository.count(ActivityEventSpecification.occurredBetween(now.minusSeconds(45), now.minusSeconds(15))));
         assertEquals(3, activityEventRepository.count(ActivityEventSpecification.notSuperseded()));
         assertEquals(2, activityEventRepository.count(ActivityEventSpecification.typeIn(List.of(ActivityTypes.ACCESS_LOGIN_FAILED))));
+    }
+
+    /**
+     * Las dos categorias que llegaron con V2 y V3 ({@code ALTER TYPE ... ADD VALUE}) se guardan, se
+     * consultan y se purgan como las de V1: con su categoria, por la especificacion del registro y con
+     * su retencion de 400 dias.
+     */
+    @Test
+    void fieldAndResourcesLinesAreRecordedQueriedAndPurgedUnderTheirOwnCategory() {
+        Instant now = Instant.now();
+        for (String id : List.of("old-field", "kept-field")) {
+            activityIngestor.ingest(ActivityEventDraft.builder().source("mto-field", id).type(ActivityTypes.FIELD_POSSESSION_OPENED)
+                    .occurredAt(now).actor(Actor.person("campo.responsable", "u-field")).subject(Subject.of("possession", id)).build());
+        }
+        for (String id : List.of("old-resources", "kept-resources")) {
+            activityIngestor.ingest(ActivityEventDraft.builder().source("mto-resources", id).type(ActivityTypes.RESOURCES_PERSON_CREATED)
+                    .occurredAt(now).actor(Actor.person("recursos.responsable", "u-res")).subject(Subject.of("person", id)).build());
+        }
+        entityManager.flush();
+        entityManager.clear();
+
+        assertEquals(ActivityCategory.FIELD, activityEventRepository.findBySourceServiceAndSourceEventId("mto-field", "old-field")
+                .orElseThrow().getCategory());
+        assertEquals(ActivityCategory.RESOURCES, activityEventRepository.findBySourceServiceAndSourceEventId("mto-resources", "old-resources")
+                .orElseThrow().getCategory());
+        assertEquals(2, activityEventRepository.count(ActivityEventSpecification.categoryEquals(ActivityCategory.FIELD)));
+        assertEquals(2, activityEventRepository.count(ActivityEventSpecification.categoryEquals(ActivityCategory.RESOURCES)));
+        assertEquals(4, activityEventRepository.count(ActivityEventSpecification.categoryNot(ActivityCategory.ACCESS)),
+                "salen por el registro general");
+        assertEquals(1, activityEventRepository.count(ActivityEventSpecification.typeIn(List.of(ActivityTypes.RESOURCES_PERSON_CREATED))
+                .and(ActivityEventSpecification.subjectIdEquals("kept-resources"))));
+
+        entityManager.createNativeQuery("update activity_event set recorded_at = now() - interval '401 days' "
+                + "where source_event_id in ('old-field', 'old-resources')").executeUpdate();
+        entityManager.createNativeQuery("update activity_event set recorded_at = now() - interval '100 days' "
+                + "where source_event_id in ('kept-field', 'kept-resources')").executeUpdate();
+
+        Map<String, Integer> deleted = retentionPurge.purge();
+
+        assertEquals(1, deleted.get("activity_event.FIELD"), "400 dias para el campo");
+        assertEquals(1, deleted.get("activity_event.RESOURCES"), "400 dias para los recursos");
+        entityManager.clear();
+        assertTrue(activityEventRepository.findBySourceServiceAndSourceEventId("mto-field", "old-field").isEmpty());
+        assertTrue(activityEventRepository.findBySourceServiceAndSourceEventId("mto-resources", "old-resources").isEmpty());
+        assertTrue(activityEventRepository.findBySourceServiceAndSourceEventId("mto-field", "kept-field").isPresent());
+        assertTrue(activityEventRepository.findBySourceServiceAndSourceEventId("mto-resources", "kept-resources").isPresent());
+    }
+
+    /**
+     * Cada enumerado de Java que se guarda como enumerado de PostgreSQL ({@code SqlTypes.NAMED_ENUM})
+     * tiene exactamente los valores de su tipo, y no hay en la base un tipo enumerado sin su pareja
+     * aqui. Un valor nuevo sin su {@code ALTER TYPE} solo fallaria al escribirlo, con el mensaje en la
+     * DLQ; un {@code ALTER TYPE} sin su valor en Java, al leer la fila.
+     */
+    @Test
+    void everyJavaEnumStoredAsAPostgreSqlEnumHasExactlyTheValuesOfItsType() {
+        Map<String, Class<? extends Enum<?>>> pairs = new TreeMap<>(Map.of(
+                "activity_category", ActivityCategory.class,
+                "activity_severity", ActivitySeverity.class,
+                "actor_kind", ActorKind.class,
+                "activity_burst_status", ActivityBurstStatus.class,
+                "inbox_message_status", InboxMessageStatus.class,
+                "delivery_scope", DeliveryScope.class,
+                "delivery_status", DeliveryStatus.class));
+
+        Set<String> types = new TreeSet<>(stringsOf(entityManager.createNativeQuery(
+                "select t.typname from pg_type t join pg_namespace n on n.oid = t.typnamespace "
+                        + "where t.typtype = 'e' and n.nspname = current_schema()").getResultList()));
+        assertEquals(pairs.keySet(), types, "cada tipo enumerado de la base con su enumerado de Java");
+        pairs.forEach((type, javaEnum) -> {
+            Set<String> database = new TreeSet<>(stringsOf(entityManager.createNativeQuery(
+                    "select unnest(enum_range(null::" + type + "))::text").getResultList()));
+            Set<String> java = Stream.of(javaEnum.getEnumConstants()).map(Enum::name).collect(Collectors.toCollection(TreeSet::new));
+            assertEquals(java, database, type);
+        });
     }
 
     // --- rachas ---
@@ -505,6 +588,10 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
                 .subject(Subject.of(subjectType, subjectId))
                 .payload(Map.of("clientId", actorKind == ActorKind.SERVICE ? "mto-users-svc" : "admin-cli"))
                 .build();
+    }
+
+    private static List<String> stringsOf(List<?> rows) {
+        return rows.stream().map(String::valueOf).toList();
     }
 
     private ActivityEvent reload(UUID id) {
