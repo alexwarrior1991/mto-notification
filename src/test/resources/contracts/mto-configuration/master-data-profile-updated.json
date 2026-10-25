@@ -1,0 +1,90 @@
+{
+  "operationId": "9e1f2a3b-4c5d-4e6f-8a7b-0c1d2e3f4a5b",
+  "referenceId": "profile-6802",
+  "origin": "mto-configuration",
+  "creationDate": "2026-10-25T07:00:00Z",
+  "eventType": "MASTER_DATA_PROFILE_UPDATED",
+  "data": {
+    "entityName": "profile",
+    "entityId": "6802",
+    "operation": "UPDATED",
+    "values": {
+      "id": 6802,
+      "profileId": "68-2.05",
+      "kp": 68205.000,
+      "orderInTrack": 5,
+      "span": 55.000,
+      "heightCantileverSupport": null,
+      "poleGaugeLocation": null,
+      "railPoleDistance": -3100,
+      "track": {
+        "id": 52,
+        "name": "TRACK 2",
+        "enabled": true,
+        "stationIds": [ 51 ],
+        "executionPackageId": 5
+      },
+      "anchorages": [],
+      "anchorageFoundation": null,
+      "foundation": null,
+      "poleType": {
+        "id": 2,
+        "code": "HEB"
+      },
+      "portal": null,
+      "profileStatus": {
+        "id": 1,
+        "code": "OK"
+      },
+      "returnSupport": null,
+      "supportType": null,
+      "assemblyConfiguration": null,
+      "sectionings": [ {
+        "id": 31,
+        "code": "NS"
+      } ],
+      "sectioningFeedings": [],
+      "cantilevers": [ {
+        "id": 9001,
+        "cwHeight": 5.300,
+        "stagger": 200,
+        "catenaryHeight": null,
+        "cwElevation": null,
+        "windDeflection": null,
+        "armAngle": null,
+        "cantileverTypeId": 11,
+        "steadyArmId": 9101
+      } ],
+      "disconnectors": [ {
+        "id": 701,
+        "name": "NAT-NS3",
+        "onLoad": true,
+        "normallyOpen": true,
+        "driveType": "MOTOR",
+        "disconnectorFunctionId": 21
+      }, {
+        "id": 702,
+        "name": "NAT-NS4",
+        "onLoad": true,
+        "normallyOpen": false,
+        "driveType": "MOTOR",
+        "disconnectorFunctionId": 21
+      } ],
+      "disconnector": {
+        "id": 701,
+        "name": "NAT-NS3",
+        "onLoad": true,
+        "normallyOpen": true,
+        "driveType": "MOTOR",
+        "disconnectorFunctionId": 21
+      }
+    }
+  },
+  "messageHash": "7b49d3989a21ff887568eb88b30974712b14973cd421d65031ed3d887fbaea43",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000001",
+    "username": "config.editor",
+    "kind": "PERSON"
+  },
+  "correlationId": "5d2e7f10-2222-4333-8444-000000006802"
+}

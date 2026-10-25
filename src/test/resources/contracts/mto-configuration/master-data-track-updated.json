@@ -1,0 +1,39 @@
+{
+  "operationId": "1b2c3d4e-0003-4000-8000-000000000052",
+  "referenceId": "track-52",
+  "origin": "mto-configuration",
+  "creationDate": "2026-10-25T07:00:00Z",
+  "eventType": "MASTER_DATA_TRACK_UPDATED",
+  "data": {
+    "entityName": "track",
+    "entityId": "52",
+    "operation": "UPDATED",
+    "values": {
+      "id": 52,
+      "name": "TRACK 2",
+      "enabled": true,
+      "executionPackage": {
+        "id": 5,
+        "name": "EP5",
+        "initialPackage": false,
+        "enabled": true
+      },
+      "stations": [ {
+        "id": 51,
+        "name": "NAT"
+      } ],
+      "profiles": [ {
+        "id": 6802,
+        "profileId": "68-2.05",
+        "kp": 68205.000
+      } ]
+    }
+  },
+  "messageHash": "2321336765aa42371782ee8ab3d6fa818d9be47e0a80dc4c013059a09e5e9581",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000001",
+    "username": "config.editor",
+    "kind": "PERSON"
+  },
+  "correlationId": "5d2e7f10-2222-4333-8444-000000000052"
+}

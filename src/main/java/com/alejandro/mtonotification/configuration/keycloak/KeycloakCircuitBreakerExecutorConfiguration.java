@@ -27,8 +27,8 @@ import java.util.concurrent.Executors;
  * ({@link KeycloakClientConfiguration}). Solo con los hilos virtuales activos. El executor no es un bean
  * a proposito: un {@code Executor} en el contexto haria que Boot dejara de crear su
  * {@code applicationTaskExecutor}. Por eso lo cierra esta configuracion al cerrarse el contexto: una
-llamada en vuelo se interrumpe, como la interrumpiria el {@code TimeLimiter}, y ninguna nueva
-arranca.</p>
+ * llamada en vuelo se interrumpe, como la interrumpiria el {@code TimeLimiter}, y ninguna nueva
+ * arranca.</p>
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnThreading(Threading.VIRTUAL)

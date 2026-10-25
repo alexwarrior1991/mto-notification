@@ -1,0 +1,64 @@
+{
+  "operationId": "1b2c3d4e-0002-4000-8000-000000000051",
+  "referenceId": "station-51",
+  "origin": "mto-configuration",
+  "creationDate": "2026-10-25T07:00:00Z",
+  "eventType": "MASTER_DATA_STATION_UPDATED",
+  "data": {
+    "entityName": "station",
+    "entityId": "51",
+    "operation": "UPDATED",
+    "values": {
+      "id": 51,
+      "name": "NAT",
+      "executionPackage": {
+        "id": 5,
+        "name": "EP5",
+        "initialPackage": false,
+        "enabled": true
+      },
+      "tracks": [ {
+        "id": 52,
+        "name": "TRACK 2",
+        "enabled": true
+      }, {
+        "id": 53,
+        "name": "TRACK 1",
+        "enabled": true
+      } ],
+      "disconnectors": [ {
+        "id": 701,
+        "name": "NAT-NS3",
+        "onLoad": true,
+        "normallyOpen": true,
+        "driveType": "MOTOR",
+        "profileId": 6802,
+        "kp": null,
+        "disconnectorFunctionId": 21
+      }, {
+        "id": 702,
+        "name": "NAT-NS4",
+        "onLoad": true,
+        "normallyOpen": false,
+        "driveType": "MOTOR",
+        "profileId": 6802,
+        "kp": null,
+        "disconnectorFunctionId": 21
+      } ],
+      "sectionInsulators": [ {
+        "id": 8101,
+        "name": "SI W31-W41",
+        "enabled": true,
+        "kp": 68180.000,
+        "installationType": "TRACK_CONNECTION"
+      } ]
+    }
+  },
+  "messageHash": "e687c5e12884e456fb46b6553b18152bcbbfc76d3014a868a121ff453820b6ae",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000001",
+    "username": "config.editor",
+    "kind": "PERSON"
+  },
+  "correlationId": "5d2e7f10-2222-4333-8444-000000000051"
+}

@@ -1,0 +1,49 @@
+{
+  "operationId": "1b2c3d4e-0001-4000-8000-000000000005",
+  "referenceId": "execution-package-5",
+  "origin": "mto-configuration",
+  "creationDate": "2026-10-25T07:00:00Z",
+  "eventType": "MASTER_DATA_EXECUTION_PACKAGE_UPDATED",
+  "data": {
+    "entityName": "execution-package",
+    "entityId": "5",
+    "operation": "UPDATED",
+    "values": {
+      "id": 5,
+      "name": "EP5",
+      "initialPackage": false,
+      "length": 18400,
+      "startDate": "2026-01-01",
+      "endDate": "2027-12-31",
+      "enabled": true,
+      "company": {
+        "id": 1,
+        "code": "SYN",
+        "name": "Syneox",
+        "identificationNumber": "B10744258"
+      },
+      "tracks": [ {
+        "id": 52,
+        "name": "TRACK 2",
+        "enabled": true,
+        "stationIds": [ 51 ]
+      }, {
+        "id": 53,
+        "name": "TRACK 1",
+        "enabled": true,
+        "stationIds": [ 51 ]
+      } ],
+      "stations": [ {
+        "id": 51,
+        "name": "NAT"
+      } ]
+    }
+  },
+  "messageHash": "8301f6412b525fa09d67182849bcb360612c335baa62adece77e2d47582ea267",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000001",
+    "username": "config.editor",
+    "kind": "PERSON"
+  },
+  "correlationId": "5d2e7f10-2222-4333-8444-000000000005"
+}

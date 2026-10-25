@@ -1,0 +1,45 @@
+{
+  "operationId": "1b2c3d4e-0005-4000-8000-000000000701",
+  "referenceId": "disconnector-701",
+  "origin": "mto-configuration",
+  "creationDate": "2026-10-25T07:00:00Z",
+  "eventType": "MASTER_DATA_DISCONNECTOR_UPDATED",
+  "data": {
+    "entityName": "disconnector",
+    "entityId": "701",
+    "operation": "UPDATED",
+    "values": {
+      "id": 701,
+      "name": "NAT-NS3",
+      "onLoad": true,
+      "normallyOpen": true,
+      "driveType": "MOTOR",
+      "station": {
+        "id": 51,
+        "name": "NAT"
+      },
+      "profile": {
+        "id": 6802,
+        "profileId": "68-2.05",
+        "kp": 68205.000
+      },
+      "kp": null,
+      "track": null,
+      "connectedTrack": {
+        "id": 53,
+        "name": "TRACK 1"
+      },
+      "disconnectorFunction": {
+        "id": 21,
+        "code": "Disc/IO"
+      }
+    }
+  },
+  "messageHash": "74d3c12fd2e696016e99965b013daf4bc63184d0858292739f9af7da2affc371",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000001",
+    "username": "config.editor",
+    "kind": "PERSON"
+  },
+  "correlationId": "5d2e7f10-2222-4333-8444-000000000701"
+}

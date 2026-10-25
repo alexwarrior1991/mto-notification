@@ -385,6 +385,26 @@ class BusinessLayerTest {
             verify(ingestor, never()).ingest(any());
         }
 
+        /**
+         * Los nueve ejemplos de datos maestros que versiona mto-configuration, tal cual: cada uno pasa por
+         * el adaptador como una actualizacion que va a una rafaga, con su entidad, aunque traiga claves
+         * anidadas que aqui no se leen (los {@code disconnectors} del perfil, las agujas del aislador).
+         */
+        @Test
+        void everyMasterDataExampleOfConfigurationGoesToABurstOfItsEntity() {
+            List<String> entities = List.of("cantilever", "disconnector", "execution-package", "profile",
+                    "section-insulator", "station", "steady-arm", "track", "track-access-point");
+            for (String entity : entities) {
+                adapter.handle(fixture("contracts/mto-configuration/master-data-" + entity + "-updated.json"), context);
+            }
+
+            ArgumentCaptor<String> recorded = ArgumentCaptor.forClass(String.class);
+            verify(bursts, times(entities.size())).record(eq("mto-configuration"), recorded.capture(), eq("updated"),
+                    any(), any(), any(), any());
+            assertEquals(entities, recorded.getAllValues());
+            verify(ingestor, never()).ingest(any());
+        }
+
         @Test
         void aDeletedCantileverIsAggregatedAndAnUnknownOperationIsPermanent() {
             adapter.handle(envelope("cantilever", "deleted", null, null), context);
