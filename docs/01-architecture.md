@@ -65,8 +65,13 @@ Reglas que mantienen honestas las capas:
   través de un `ObjectProvider<DeliveryDispatcher>` (el despachador ingiere eventos, que pasan por
   las reglas, que crean notificaciones), y el detector de rachas recibe el ingestor con `@Lazy`.
 - **Hilos**: `spring.threads.virtual.enabled` (`SPRING_THREADS_VIRTUAL_ENABLED`, `true`) pone en hilos
-  virtuales Tomcat, cada pasada de los `@Scheduled` (el lector, el cierre de ráfagas, el despachador,
-  la purga: ya no comparten un pool de cuatro) y los consumidores de RabbitMQ; el circuito `keycloak`
+  virtuales Tomcat, los `@Scheduled` y los consumidores de RabbitMQ. Los `@Scheduled` (el lector, el
+  cierre de ráfagas, el despachador y la purga) corren en un pool de `spring.task.scheduling.pool.size`
+  (`SPRING_TASK_SCHEDULING_POOL_SIZE`, 4) de `SchedulingConfiguration`, de hilos virtuales con la
+  bandera y de plataforma sin ella, para que ninguno espere a otro: el planificador de Boot con hilos
+  virtuales corre todas las tareas `fixedDelay` en un solo hilo, así que un Keycloak o un SMTP lentos
+  paraban el cierre de ráfagas y los reintentos del correo. Cada tarea sigue sin solaparse consigo
+  misma. El circuito `keycloak`
   hace cada llamada en un hilo virtual propio (`KeycloakCircuitBreakerExecutorConfiguration`), porque
   el executor de Resilience4j es un pool de plataforma que la bandera no toca. El límite real pasa a
   ser el pool de conexiones, a la vista en `DATABASE_POOL_MAX_SIZE` (10). El despacho inmediato

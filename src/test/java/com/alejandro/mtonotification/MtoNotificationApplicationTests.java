@@ -24,8 +24,10 @@ import com.alejandro.mtonotification.application.service.SourceCursorService;
 import com.alejandro.mtonotification.application.service.SourceEventHandler;
 import com.alejandro.mtonotification.application.service.SourceEventProcessor;
 import com.alejandro.mtonotification.application.service.ThrottleGate;
+import com.alejandro.mtonotification.configuration.keycloak.KeycloakCircuitBreakerExecutorConfiguration;
 import com.alejandro.mtonotification.configuration.keycloak.KeycloakClientConfiguration;
 import com.alejandro.mtonotification.configuration.keycloak.KeycloakPollingConfiguration;
+import com.alejandro.mtonotification.configuration.scheduling.SchedulingConfiguration;
 import com.alejandro.mtonotification.configuration.web.CorrelationIdFilter;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.ConfigurationSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.FieldSourceConsumer;
@@ -41,26 +43,39 @@ import com.alejandro.mtonotification.support.PostgreSQLTestContainer;
 import com.zaxxer.hikari.HikariDataSource;
 import io.micrometer.tracing.Tracer;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.task.TaskSchedulingAutoConfiguration;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.thread.Threading;
+import org.springframework.cloud.circuitbreaker.resilience4j.Resilience4JCircuitBreakerFactory;
 import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 import javax.sql.DataSource;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
  * El {@code @SpringBootTest} de la suite: arranca el contexto entero contra un PostgreSQL real
@@ -132,7 +147,77 @@ class MtoNotificationApplicationTests extends PostgreSQLTestContainer {
                 .forEach(defaults.getPropertySources()::addLast);
         assertEquals(10, defaults.getProperty("spring.datasource.hikari.maximum-pool-size", Integer.class),
                 "el valor por defecto de DATABASE_POOL_MAX_SIZE");
-        assertNull(defaults.getProperty("spring.task.scheduling.pool.size"), "con hilos virtuales cada pasada tiene su hilo");
+        assertEquals(4, defaults.getProperty("spring.task.scheduling.pool.size", Integer.class),
+                "el pool de los @Scheduled, el de SchedulingConfiguration, con hilos virtuales y sin ellos");
+    }
+
+    /**
+     * Dos pasadas {@code fixedDelay} corren a la vez en el planificador de {@link SchedulingConfiguration},
+     * con hilos virtuales y sin ellos: cada una espera a que la otra haya empezado, asi que con un solo
+     * hilo la segunda no empezaria nunca mientras la primera espera. Es lo que no hacia el planificador
+     * de Boot con hilos virtuales, que corre todas las tareas {@code fixedDelay} en su unico hilo: el lector
+     * de Keycloak paraba el cierre de rafagas y el despachador.
+     */
+    @Test
+    void theScheduledPassesRunAtTheSameTimeWithVirtualThreadsAndWithout() {
+        for (boolean virtual : List.of(true, false)) {
+            new ApplicationContextRunner()
+                    .withConfiguration(AutoConfigurations.of(TaskSchedulingAutoConfiguration.class))
+                    .withUserConfiguration(SchedulingConfiguration.class, TwoWaitingPasses.class)
+                    .withPropertyValues("spring.threads.virtual.enabled=" + virtual, "spring.task.scheduling.pool.size=4")
+                    .run(started -> {
+                        TwoWaitingPasses passes = started.getBean(TwoWaitingPasses.class);
+                        try {
+                            assertTrue(passes.bothStarted.await(10, TimeUnit.SECONDS),
+                                    "las dos pasadas a la vez, con spring.threads.virtual.enabled=" + virtual);
+                            assertEquals(Set.of(virtual), passes.onVirtualThreads, "hilos virtuales solo con la bandera");
+                        } finally {
+                            passes.release.countDown();
+                        }
+                    });
+        }
+    }
+
+    /** El executor del circuito {@code keycloak} no es un bean: lo cierra su configuracion con el contexto. */
+    @Test
+    void theExecutorOfTheKeycloakCircuitIsShutDownWithTheContext() {
+        KeycloakCircuitBreakerExecutorConfiguration configuration = new KeycloakCircuitBreakerExecutorConfiguration();
+        Resilience4JCircuitBreakerFactory factory = mock(Resilience4JCircuitBreakerFactory.class);
+        configuration.keycloakCircuitBreakerExecutor().customize(factory);
+        ArgumentCaptor<ExecutorService> executor = ArgumentCaptor.forClass(ExecutorService.class);
+        verify(factory).configureExecutorService(executor.capture());
+
+        assertFalse(executor.getValue().isShutdown());
+        configuration.destroy();
+        assertTrue(executor.getValue().isShutdown());
+    }
+
+    /**
+     * Sin {@code @Configuration} a proposito: una clase anidada con ella sustituiria la configuracion
+     * de este {@code @SpringBootTest}. {@code @EnableScheduling} basta para que el runner la procese.
+     */
+    @EnableScheduling
+    static class TwoWaitingPasses {
+
+        final CountDownLatch bothStarted = new CountDownLatch(2);
+        final CountDownLatch release = new CountDownLatch(1);
+        final Set<Boolean> onVirtualThreads = ConcurrentHashMap.newKeySet();
+
+        @Scheduled(fixedDelay = 60_000)
+        void first() throws InterruptedException {
+            pass();
+        }
+
+        @Scheduled(fixedDelay = 60_000)
+        void second() throws InterruptedException {
+            pass();
+        }
+
+        private void pass() throws InterruptedException {
+            onVirtualThreads.add(Thread.currentThread().isVirtual());
+            bothStarted.countDown();
+            release.await(30, TimeUnit.SECONDS);
+        }
     }
 
     /** Una llamada por el circuito {@code keycloak} espera en un hilo virtual, no en el pool de plataforma del circuito. */

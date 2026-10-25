@@ -7,13 +7,21 @@ spring:
   # Hilos virtuales: las peticiones de Tomcat, los @Scheduled (el lector de Keycloak, el cierre de
   # rafagas, el despachador, la purga) y los consumidores de RabbitMQ esperan a la base, al broker, a
   # Keycloak o al SMTP sin ocupar un hilo del sistema operativo cada uno, y el circuito de las llamadas a
-  # Keycloak tambien (KeycloakCircuitBreakerExecutorConfiguration). Los planificadores ya no comparten un
-  # pool de cuatro: cada pasada corre en su hilo y ninguno espera a otro. El hilo del despacho inmediato
+  # Keycloak tambien (KeycloakCircuitBreakerExecutorConfiguration). El hilo del despacho inmediato
   # (delivery-dispatch) sigue siendo uno solo a proposito: funde las peticiones seguidas en una pasada.
   # Con false, todo vuelve a hilos de plataforma.
   threads:
     virtual:
       enabled: ${SPRING_THREADS_VIRTUAL_ENABLED:true}
+
+  # Los @Scheduled no se esperan unos a otros: el lector habla con la red y el despachador con el SMTP.
+  # SchedulingConfiguration planifica en un pool de este tamano, de hilos virtuales con los hilos
+  # virtuales activos y de plataforma sin ellos. El planificador de Boot con hilos virtuales corre todas
+  # las tareas fixedDelay en un mismo hilo, y el de plataforma, sin este tamano, tiene uno solo.
+  task:
+    scheduling:
+      pool:
+        size: ${SPRING_TASK_SCHEDULING_POOL_SIZE:4}
 
   # El limite real de concurrencia: sin el tope de 200 hilos de Tomcat, lo que espera es la conexion.
   # El PostgreSQL de mto-platform es uno para todos los servicios (max_connections 100 por defecto),

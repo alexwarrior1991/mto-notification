@@ -36,8 +36,11 @@ TEST_DATABASE_USERNAME=... TEST_DATABASE_PASSWORD=... ./mvnw verify   # sin Dock
 
 Entorno local: `cd ../mto-platform && docker compose --profile all up -d && ./keycloak/apply-partials.sh`.
 Hilos virtuales activos (`SPRING_THREADS_VIRTUAL_ENABLED`): el límite es el pool de conexiones
-(`DATABASE_POOL_MAX_SIZE`, 10), y el circuito `keycloak` llama en un hilo virtual
-(`KeycloakCircuitBreakerExecutorConfiguration`). Perfiles `dev` (por defecto), `test`, `prod`. Puerto **8086** (`dev`); el contenedor escucha en 8080
+(`DATABASE_POOL_MAX_SIZE`, 10), el circuito `keycloak` llama en un hilo virtual
+(`KeycloakCircuitBreakerExecutorConfiguration`) y los `@Scheduled` corren en un pool de 4
+(`SchedulingConfiguration`, `SPRING_TASK_SCHEDULING_POOL_SIZE`), virtuales o no, porque el
+planificador de Boot con hilos virtuales corre todos los `fixedDelay` en un solo hilo y se esperarían.
+Perfiles `dev` (por defecto), `test`, `prod`. Puerto **8086** (`dev`); el contenedor escucha en 8080
 y `mto-platform` lo publica en 8086. Detrás del gateway el prefijo público es `/api/notifications`.
 
 - Flyway corre al arrancar sobre `src/main/resources/db/migration`; Hibernate es `ddl-auto: validate`
@@ -77,12 +80,13 @@ Las mismas tres capas que `mto-maintenance` bajo `com.alejandro.mtonotification`
   `RestKeycloakDirectoryClient` sobre `RestClient`, circuito `keycloak`), `mail` (`EmailChannel`).
 - `configuration` — `security` (resource server de Keycloak, las mismas piezas que los hermanos;
   `CurrentUserService.getAudienceKeys()` da las claves de la bandeja), `web` (`CorrelationIdFilter`),
-  auditoría JPA, OpenAPI, `rabbitmq` (`SourceRabbitProperties`: una fuente por clave; `ConsumerQueueProperties`: las colas de
-todas y sus DLQ, `classic` por defecto o `quorum` con `app.rabbitmq.queues.type`, como en OpenShift, con
-`x-delivery-limit` 5; con `classic` se declaran exactamente como antes, porque el broker rechaza un
-argumento nuevo en una cola que ya existe), `messaging`
-  (firma), `keycloak` (`KeycloakProperties`, el cliente con la cuenta de servicio, el sondeo),
-  `notification` (`NotificationProperties`), `mail`, `scheduling` (ráfagas, entregas, retención).
+  auditoría JPA, OpenAPI, `rabbitmq` (`SourceRabbitProperties`: una fuente por clave;
+  `ConsumerQueueProperties`: las colas de todas y sus DLQ, `classic` por defecto o `quorum` con
+  `app.rabbitmq.queues.type`, como en OpenShift, con `x-delivery-limit` 5; con `classic` se declaran
+  exactamente como antes, porque el broker rechaza un argumento nuevo en una cola que ya existe),
+  `messaging` (firma), `keycloak` (`KeycloakProperties`, el cliente con la cuenta de servicio, el
+  sondeo), `notification` (`NotificationProperties`), `mail`, `scheduling` (ráfagas, entregas,
+  retención, y `SchedulingConfiguration`, el pool en el que corren).
 
 ### Seguridad
 
@@ -193,7 +197,8 @@ el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera y la de
 entregas), los tres `@DataJpaTest` que recogen los servicios package-private con una
 `@TestConfiguration` anidada y `@ComponentScan` por nombre; `MtoNotificationApplicationTests`
 (contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean;
-y los hilos virtuales con su pool y el circuito `keycloak` llamando en uno);
+y los hilos virtuales con su pool, los `@Scheduled` que corren a la vez con hilos virtuales y sin
+ellos, y el circuito `keycloak` llamando en uno);
 y en `verify`, `KeycloakAuthorizationIT` y `KeycloakEventsIT` (Keycloak 26.1 en Testcontainers con
 `src/test/resources/keycloak/mto-notification-test-realm.json`, la misma forma que `keycloak/`,
 con la cuenta de servicio, copiado en el contenedor como `mto-realm.json` porque `DirImportProvider`
