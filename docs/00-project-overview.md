@@ -13,8 +13,8 @@ urgente, de un material bajo mínimo o de tres logins fallidos seguidos.
 
 - **Un registro de actividad** normalizado y append-only, alimentado por las fuentes que ya existen
   (los eventos de datos maestros, los eventos de acceso y de administración de Keycloak) y por las
-  que se crean para ello (los outbox de `mto-maintenance`, `mto-stock` y `mto-field`, el evento
-  propio de `mto-users`). Se consulta con filtros y con permiso; los accesos, que llevan usuario e IP, con un
+  que se crean para ello (los outbox de `mto-maintenance`, `mto-stock`, `mto-field` y `mto-resources`,
+  el evento propio de `mto-users`). Se consulta con filtros y con permiso; los accesos, que llevan usuario e IP, con un
   permiso aparte.
 - **Un motor de reglas** que decide qué merece un aviso, a quién (un usuario, un rol de cliente o un
   perfil; más adelante un equipo o una zona) y por qué canal: la bandeja de la aplicación, con
