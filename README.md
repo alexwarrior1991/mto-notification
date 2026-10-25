@@ -71,7 +71,10 @@ tienen:
 
 Hilos virtuales con `SPRING_THREADS_VIRTUAL_ENABLED` (`true`; `false` vuelve a hilos de plataforma)
 y el pool de conexiones con `DATABASE_POOL_MAX_SIZE` (10), que con ellos es el límite real: la suma
-de los pools de todos los servicios tiene que caber en el PostgreSQL de `mto-platform`.
+de los pools de todos los servicios tiene que caber en el PostgreSQL de `mto-platform`. Los procesos
+programados (el lector de Keycloak, el cierre de ráfagas, el despachador y la purga) corren en un pool
+de `SPRING_TASK_SCHEDULING_POOL_SIZE` (4) hilos, virtuales o de plataforma según la bandera, para que
+ninguno espere a otro.
 
 Interruptores: `APP_RABBITMQ_ENABLED=false` arranca sin broker, `APP_RABBITMQ_QUEUES_TYPE=quorum`
 declara las colas de las fuentes y sus DLQ como quorum, para un RabbitMQ en clúster como en OpenShift

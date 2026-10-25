@@ -71,6 +71,14 @@ Los perfiles de los demás servicios llevan también permisos de aquí, en su pr
 hay algo que recibir; el técnico de campo no lleva nada de aquí: un dispositivo solo habla con
 `mto-field`.
 
+Las reglas de `mto-resources` (fase 6) avisan a `PROFILE:mto-resources-manager` y
+`PROFILE:mto-resources-admin`, y a personas concretas por `USER:` (el jefe de un equipo, la persona
+de una cualificación que caduca). Para que esos avisos se puedan leer, los dos perfiles tienen que
+llevar `notification-inbox` en la parcial de `mto-resources`, y las personas, en el perfil de puesto
+que les dé su parcial; sin él la notificación se crea igual, pero su bandeja responde 403. Eso se
+declara en `mto-resources` y en `mto-platform`, no aquí, y desde este repositorio no se puede
+comprobar: al cambiar esas parciales, que no se pierda.
+
 ### La cuenta de servicio
 
 `mto-notification-svc` necesita seis roles de `realm-management`, que **no** van en la parcial (una

@@ -1,0 +1,55 @@
+{
+  "operationId": "1b2c3d4e-0006-4000-8000-000000008101",
+  "referenceId": "section-insulator-8101",
+  "origin": "mto-configuration",
+  "creationDate": "2026-10-25T07:00:00Z",
+  "eventType": "MASTER_DATA_SECTION_INSULATOR_UPDATED",
+  "data": {
+    "entityName": "section-insulator",
+    "entityId": "8101",
+    "operation": "UPDATED",
+    "values": {
+      "id": 8101,
+      "name": "SI W31-W41",
+      "enabled": true,
+      "kp": 68180.000,
+      "installationType": "TRACK_CONNECTION",
+      "station": {
+        "id": 51,
+        "name": "NAT"
+      },
+      "track": {
+        "id": 52,
+        "name": "TRACK 2"
+      },
+      "connectedTrack": {
+        "id": 53,
+        "name": "TRACK 1"
+      },
+      "switches": [ {
+        "id": 8201,
+        "code": "W31",
+        "kp": 68150.000,
+        "turnoutDenominator": 9,
+        "turnoutRate": "1:9",
+        "trackId": 52,
+        "enabled": true
+      }, {
+        "id": 8202,
+        "code": "W41",
+        "kp": 68210.000,
+        "turnoutDenominator": 12,
+        "turnoutRate": "1:12",
+        "trackId": 53,
+        "enabled": true
+      } ]
+    }
+  },
+  "messageHash": "cd8defdd2264cd1c9e5efd7474e50d2487f78ab29279b940bf123e9a8da2c006",
+  "actor": {
+    "id": "6f1b1c8e-0000-4000-8000-000000000001",
+    "username": "config.editor",
+    "kind": "PERSON"
+  },
+  "correlationId": "5d2e7f10-2222-4333-8444-000000008101"
+}

@@ -49,7 +49,12 @@
   ejemplos de `mto-resources`, copiados como fixtures de contrato.
 - **Hilos virtuales**: Tomcat, los `@Scheduled` y los listeners, con el pool de conexiones como
   límite (`DATABASE_POOL_MAX_SIZE`), y el circuito `keycloak` llamando en un hilo virtual
-  (`KeycloakCircuitBreakerExecutorConfiguration`).
+  (`KeycloakCircuitBreakerExecutorConfiguration`). Los `@Scheduled` corren en un pool de cuatro
+  (`SchedulingConfiguration`), también con hilos virtuales, para que no se esperen unos a otros.
+- **OpenShift**: la imagen corre con un UID cualquiera del grupo 0 (la prueba de humo del CI arranca
+  con `--user 1000680000:0`), y las colas de las fuentes y sus DLQ se declaran `classic` por defecto
+  o `quorum` con `app.rabbitmq.queues.type` (`ConsumerQueueProperties`, con `x-delivery-limit` 5),
+  para un RabbitMQ en clúster. Con `classic` la declaración es exactamente la de antes.
 
 ## Siguiente
 

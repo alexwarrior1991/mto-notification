@@ -1,5 +1,6 @@
 package com.alejandro.mtonotification.configuration.keycloak;
 
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnThreading;
 import org.springframework.boot.thread.Threading;
 import org.springframework.cloud.circuitbreaker.resilience4j.Resilience4JCircuitBreakerFactory;
@@ -25,20 +26,26 @@ import java.util.concurrent.Executors;
  * y el token de la cuenta de servicio ya se pedia fuera de cualquier peticion HTTP
  * ({@link KeycloakClientConfiguration}). Solo con los hilos virtuales activos. El executor no es un bean
  * a proposito: un {@code Executor} en el contexto haria que Boot dejara de crear su
- * {@code applicationTaskExecutor}.</p>
+ * {@code applicationTaskExecutor}. Por eso lo cierra esta configuracion al cerrarse el contexto: una
+ * llamada en vuelo se interrumpe, como la interrumpiria el {@code TimeLimiter}, y ninguna nueva
+ * arranca.</p>
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnThreading(Threading.VIRTUAL)
-public class KeycloakCircuitBreakerExecutorConfiguration {
+public class KeycloakCircuitBreakerExecutorConfiguration implements DisposableBean {
 
     static final String THREAD_NAME_PREFIX = "keycloak-circuit-";
 
+    private final ExecutorService executor =
+            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name(THREAD_NAME_PREFIX, 0).factory());
+
     @Bean
     public Customizer<Resilience4JCircuitBreakerFactory> keycloakCircuitBreakerExecutor() {
-        return factory -> factory.configureExecutorService(virtualThreadExecutor());
+        return factory -> factory.configureExecutorService(executor);
     }
 
-    private static ExecutorService virtualThreadExecutor() {
-        return Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name(THREAD_NAME_PREFIX, 0).factory());
+    @Override
+    public void destroy() {
+        executor.shutdownNow();
     }
 }
