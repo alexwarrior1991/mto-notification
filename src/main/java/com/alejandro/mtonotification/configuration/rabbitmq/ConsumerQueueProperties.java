@@ -1,5 +1,6 @@
 package com.alejandro.mtonotification.configuration.rabbitmq;
 
+import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.SourceRabbitMqNames;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -31,9 +32,6 @@ public record ConsumerQueueProperties(QueueType type, Integer deliveryLimit) {
     /** Entregas sin ack tras las que una cola quorum manda el mensaje a su DLQ. */
     public static final int DEFAULT_DELIVERY_LIMIT = 5;
 
-    private static final String ARG_DEAD_LETTER_EXCHANGE = "x-dead-letter-exchange";
-    private static final String ARG_DEAD_LETTER_ROUTING_KEY = "x-dead-letter-routing-key";
-
     public ConsumerQueueProperties {
         type = type == null ? QueueType.CLASSIC : type;
         deliveryLimit = deliveryLimit == null ? DEFAULT_DELIVERY_LIMIT : deliveryLimit;
@@ -46,8 +44,8 @@ public record ConsumerQueueProperties(QueueType type, Integer deliveryLimit) {
     /** Una cola de trabajo, durable, con su descarte; quorum y con su limite de entregas si toca. */
     public Queue queue(String name, String deadLetterExchange, String deadLetterRoutingKey) {
         QueueBuilder builder = QueueBuilder.durable(name)
-                .withArgument(ARG_DEAD_LETTER_EXCHANGE, deadLetterExchange)
-                .withArgument(ARG_DEAD_LETTER_ROUTING_KEY, deadLetterRoutingKey);
+                .withArgument(SourceRabbitMqNames.ARG_DEAD_LETTER_EXCHANGE, deadLetterExchange)
+                .withArgument(SourceRabbitMqNames.ARG_DEAD_LETTER_ROUTING_KEY, deadLetterRoutingKey);
         if (type == QueueType.QUORUM) {
             builder.quorum().deliveryLimit(deliveryLimit);
         }
