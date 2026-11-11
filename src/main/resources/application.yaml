@@ -309,10 +309,16 @@ app:
       admin-enabled: ${APP_KEYCLOAK_ADMIN_EVENTS_ENABLED:true}
       poll-interval: ${APP_KEYCLOAK_EVENTS_POLL_INTERVAL:PT20S}
       initial-delay: ${APP_KEYCLOAK_EVENTS_INITIAL_DELAY:PT15S}
-      page-size: 100
-      # Tope de paginas por pasada: un arranque tras dias parado no recorre la tabla entera de una
-      # vez; la marca avanza hasta donde llego y la siguiente pasada sigue.
-      max-pages-per-poll: 50
+      page-size: ${APP_KEYCLOAK_EVENTS_PAGE_SIZE:100}
+      # Paginas de un tramo: page-size x max-pages-per-poll (5.000) son los eventos que se leen y
+      # se tienen en memoria de una vez. Con mas que eso desde la marca (una rafaga de accesos, una
+      # importacion de usuarios, el lector parado un rato) NO se pierde nada: se lee por tramos
+      # desde el mas antiguo y la marca avanza solo sobre lo ya procesado.
+      max-pages-per-poll: ${APP_KEYCLOAK_EVENTS_MAX_PAGES_PER_POLL:50}
+      # Cuanto dura como mucho una pasada con atraso. Al agotarse para tras el evento en curso, la
+      # marca queda en lo procesado y la pasada siguiente sigue desde ahi. El arrendamiento se
+      # renueva solo durante la pasada, asi que no hace falta que quepa en lease-ttl.
+      max-pass-duration: ${APP_KEYCLOAK_EVENTS_MAX_PASS_DURATION:PT1M}
       # Keycloak fecha el evento al construirlo y lo persiste al final de la peticion: uno con
       # time anterior a la marca puede hacerse visible despues. Se relee este solape; los
       # repetidos los para el inbox.
@@ -320,6 +326,18 @@ app:
       # Primer arranque: desde hace una hora. Lo anterior lo tiene Keycloak (7 dias) si hace falta.
       initial-lookback: PT1H
       lease-ttl: PT2M
+      # Un evento que falla (el adaptador no lo entiende, la ingesta lanza) queda FAILED en el
+      # inbox con su JSON y su motivo, no para a los demas y se reintenta desde ahi, sin volver a
+      # pedirlo a Keycloak: backoff tras el primer fallo, el doble tras cada uno hasta max-backoff,
+      # y max-attempts intentos en total (con estos valores, a 1, 2, 4 y 8 minutos). Agotados,
+      # queda FAILED hasta su purga (app.notification.retention.inbox-failed) y cuenta en
+      # mto_notification_keycloak_events_total{result="terminal"}.
+      retry:
+        max-attempts: ${APP_KEYCLOAK_EVENTS_RETRY_MAX_ATTEMPTS:5}
+        backoff: ${APP_KEYCLOAK_EVENTS_RETRY_BACKOFF:PT1M}
+        max-backoff: ${APP_KEYCLOAK_EVENTS_RETRY_MAX_BACKOFF:PT30M}
+        # Fallidos que se reintentan por pasada y fuente.
+        batch-size: 50
       # El cliente con el que mto-users administra el realm: sus cambios llevan este clientId en
       # los eventos de administracion y son 'de la aplicacion'; cualquier otro es un cambio hecho
       # fuera de ella.
@@ -402,6 +420,9 @@ app:
         system: P90D
       notifications: P180D
       inbox: P7D
+      # Lo que quedo FAILED en el inbox (un evento de Keycloak que agoto sus intentos, un mensaje
+      # que acabo en su DLQ): se conserva mas que lo aplicado, para poder mirarlo, y luego se purga.
+      inbox-failed: ${APP_NOTIFICATION_RETENTION_INBOX_FAILED:P30D}
       bursts: P1D
       throttles: P1D
 

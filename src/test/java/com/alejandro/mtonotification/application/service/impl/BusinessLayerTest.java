@@ -6,6 +6,7 @@ import com.alejandro.mtonotification.application.dto.keycloak.KeycloakClient;
 import com.alejandro.mtonotification.application.dto.keycloak.KeycloakEvent;
 import com.alejandro.mtonotification.application.dto.keycloak.KeycloakRole;
 import com.alejandro.mtonotification.application.dto.keycloak.KeycloakUser;
+import com.alejandro.mtonotification.application.dto.messaging.FailedInboxMessage;
 import com.alejandro.mtonotification.application.dto.messaging.InboxMessageCommand;
 import com.alejandro.mtonotification.application.dto.messaging.InboxProcessingResult;
 import com.alejandro.mtonotification.application.dto.messaging.SourceActor;
@@ -50,6 +51,7 @@ import com.alejandro.mtonotification.infrastructure.persistence.entity.Notificat
 import com.alejandro.mtonotification.infrastructure.persistence.entity.SourceKind;
 import com.alejandro.mtonotification.infrastructure.persistence.repository.ActivityEventRepository;
 import com.alejandro.mtonotification.support.RecordingInetAddressResolverProvider;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -67,6 +69,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -555,7 +558,7 @@ class BusinessLayerTest {
             SourceCursorService.Lease lease = new SourceCursorService.Lease(SourceKind.KEYCLOAK_LOGIN, "me", Instant.ofEpochMilli(base + 4 * 60_000L), Instant.now());
             when(cursors.acquire(SourceKind.KEYCLOAK_LOGIN)).thenReturn(Optional.of(lease));
             KeycloakProperties props = new KeycloakProperties("http://kc", "mto", "reg", null,
-                    new KeycloakProperties.Events(true, true, false, null, null, 3, 10, Duration.ofMinutes(2), null, null, null), null);
+                    new KeycloakProperties.Events(true, true, false, null, null, 3, 10, Duration.ofMinutes(2), null, null, null, null, null), null);
             KeycloakEventsPollerImpl poller = new KeycloakEventsPollerImpl(client, loginAdapter, adminAdapter, inbox, mock(ActivityIngestor.class), cursors, props);
 
             KeycloakEventsPoller.PollSummary summary = poller.poll(SourceKind.KEYCLOAK_LOGIN);
@@ -671,6 +674,402 @@ class BusinessLayerTest {
             assertEquals(yesterday.toString(), stall.payload().get("lastSuccessAt"));
         }
 
+        // --- El lector con mas eventos de los que caben en un tramo ---
+
+        private static KeycloakProperties smallChunks(Duration overlap, Duration maxPassDuration, KeycloakProperties.Retry retry) {
+            // Paginas de 3 y tramos de 2 paginas: 6 eventos por tramo.
+            return new KeycloakProperties("http://kc", "mto", "reg", null,
+                    new KeycloakProperties.Events(true, true, true, null, null, 3, 2, overlap, null, null, null, maxPassDuration, retry), null);
+        }
+
+        private static KeycloakEvent login(long time, String user) {
+            return new KeycloakEvent(time, "LOGIN", "r", "c", user, null, null, null, Map.of("username", user),
+                    "{\"time\":" + time + ",\"type\":\"LOGIN\",\"realmId\":\"r\",\"clientId\":\"c\",\"userId\":\"" + user
+                            + "\",\"details\":{\"username\":\"" + user + "\"}}");
+        }
+
+        private KeycloakEventsPollerImpl poller(KeycloakEventsClient client, InboxMessageService inbox, SourceCursorService cursors,
+                                                KeycloakProperties props) {
+            return new KeycloakEventsPollerImpl(client, loginAdapter, adminAdapter, inbox, mock(ActivityIngestor.class), cursors, props);
+        }
+
+        /**
+         * Una rafaga de accesos, una importacion de usuarios o el lector parado un rato: mas eventos desde la
+         * marca de los que caben en un tramo. Antes se leian los mas nuevos, la marca saltaba a ellos y los de
+         * debajo no se leian nunca. Ahora se leen por tramos desde el mas antiguo, en una sola pasada.
+         */
+        @Test
+        void moreEventsThanFitInOneChunkAreReadFromTheOldestAndNoneIsSkipped() {
+            FakeEventsClient client = new FakeEventsClient();
+            long base = 1_700_000_000_000L;
+            for (int i = 29; i >= 0; i--) {
+                client.login.add(login(base + i * 60_000L, "u" + i));
+            }
+            FakeInbox inbox = new FakeInbox();
+            FakeCursors cursors = new FakeCursors(Instant.ofEpochMilli(base - 1));
+            KeycloakEventsPollerImpl poller = poller(client, inbox, cursors, smallChunks(Duration.ZERO, null, null));
+
+            KeycloakEventsPoller.PollSummary summary = poller.poll(SourceKind.KEYCLOAK_LOGIN);
+
+            assertNull(summary.error(), summary.error());
+            assertEquals(30, summary.ingested());
+            List<String> expected = new ArrayList<>();
+            for (int i = 0; i < 30; i++) {
+                expected.add("u" + i);
+            }
+            assertEquals(expected, inbox.processed, "todos, del mas antiguo al mas nuevo");
+            assertEquals(Instant.ofEpochMilli(base + 29 * 60_000L), cursors.watermark);
+            assertTrue(cursors.released);
+            assertTrue(cursors.advances > 0, "la marca sube y el arrendamiento se renueva entre tramos");
+        }
+
+        /** Mientras se lee el atraso siguen entrando eventos por la cabeza, que empujan la lista: se repite, no se salta. */
+        @Test
+        void eventsThatKeepArrivingWhileTheBacklogIsReadDoNotMakeTheReaderSkipAny() {
+            long base = 1_700_000_000_000L;
+            AtomicInteger arrivals = new AtomicInteger();
+            FakeEventsClient client = new FakeEventsClient() {
+                @Override
+                public List<KeycloakEvent> loginEvents(int first, int max) {
+                    // Cada dos peticiones entra un acceso nuevo, hasta veinte.
+                    if (loginCalls.get() % 2 == 1 && arrivals.get() < 20) {
+                        int n = arrivals.incrementAndGet();
+                        login.addFirst(login(base + 40 * 60_000L + n * 1000L, "late" + n));
+                    }
+                    return super.loginEvents(first, max);
+                }
+            };
+            for (int i = 39; i >= 0; i--) {
+                client.login.add(login(base + i * 60_000L, "u" + i));
+            }
+            FakeInbox inbox = new FakeInbox();
+            FakeCursors cursors = new FakeCursors(Instant.ofEpochMilli(base - 1));
+            KeycloakEventsPollerImpl poller = poller(client, inbox, cursors, smallChunks(Duration.ofMinutes(2), null, null));
+
+            assertNull(poller.poll(SourceKind.KEYCLOAK_LOGIN).error());
+            // Lo que entro durante la ultima bajada lo lee la pasada siguiente.
+            assertNull(poller.poll(SourceKind.KEYCLOAK_LOGIN).error());
+
+            assertEquals(60, inbox.processed.size(), "cuarenta de atraso y veinte que fueron entrando: " + inbox.processed);
+            assertEquals(60, Set.copyOf(inbox.processed).size(), "y ninguno dos veces");
+            for (int i = 0; i < 39; i++) {
+                assertTrue(inbox.processed.indexOf("u" + i) < inbox.processed.indexOf("u" + (i + 1)), "en su orden: " + inbox.processed);
+            }
+        }
+
+        /** Sin tiempo para todo el atraso, la pasada para a mitad, la marca queda en lo procesado y la siguiente sigue desde ahi. */
+        @Test
+        void aPassThatRunsOutOfTimeStopsAtWhatItProcessedAndTheNextOneGoesOnFromThere() {
+            FakeEventsClient client = new FakeEventsClient();
+            long base = 1_700_000_000_000L;
+            for (int i = 19; i >= 0; i--) {
+                client.login.add(login(base + i * 60_000L, "u" + i));
+            }
+            MutableClock clock = new MutableClock(Instant.ofEpochMilli(base + 3_600_000L));
+            FakeInbox inbox = new FakeInbox();
+            inbox.onProcess = () -> clock.advance(Duration.ofSeconds(10));
+            FakeCursors cursors = new FakeCursors(Instant.ofEpochMilli(base - 1));
+            KeycloakEventsPollerImpl poller = new KeycloakEventsPollerImpl(client, loginAdapter, adminAdapter, inbox,
+                    mock(ActivityIngestor.class), cursors, smallChunks(Duration.ZERO, Duration.ofSeconds(35), null), clock);
+
+            KeycloakEventsPoller.PollSummary first = poller.poll(SourceKind.KEYCLOAK_LOGIN);
+
+            assertNull(first.error());
+            assertEquals(List.of("u0", "u1", "u2", "u3"), inbox.processed, "diez segundos por evento y treinta y cinco de pasada");
+            assertEquals(Instant.ofEpochMilli(base + 3 * 60_000L), cursors.watermark, "la marca, en el ultimo procesado y no mas alla");
+
+            for (int pass = 0; pass < 10; pass++) {
+                poller.poll(SourceKind.KEYCLOAK_LOGIN);
+            }
+            assertEquals(20, inbox.processed.size(), inbox.processed.toString());
+            assertEquals(20, Set.copyOf(inbox.processed).size());
+            assertEquals(Instant.ofEpochMilli(base + 19 * 60_000L), cursors.watermark);
+        }
+
+        /** Otra instancia tomo la fuente porque el arrendamiento caduco a mitad: esta para y no suelta lo que ya no es suyo. */
+        @Test
+        void aLeaseLostInTheMiddleOfABacklogStopsThePassWithoutReleasingIt() {
+            FakeEventsClient client = new FakeEventsClient();
+            long base = 1_700_000_000_000L;
+            for (int i = 29; i >= 0; i--) {
+                client.login.add(login(base + i * 60_000L, "u" + i));
+            }
+            FakeInbox inbox = new FakeInbox();
+            FakeCursors cursors = new FakeCursors(Instant.ofEpochMilli(base - 1));
+            cursors.leaseLost = true;
+            KeycloakEventsPollerImpl poller = poller(client, inbox, cursors, smallChunks(Duration.ZERO, null, null));
+
+            KeycloakEventsPoller.PollSummary summary = poller.poll(SourceKind.KEYCLOAK_LOGIN);
+
+            assertEquals("lease lost", summary.error());
+            assertEquals(List.of("u0", "u1", "u2", "u3", "u4", "u5"), inbox.processed, "solo el primer tramo");
+            assertFalse(cursors.released);
+        }
+
+        /**
+         * Keycloak ordena solo por el instante: los eventos de un mismo milisegundo pueden salir en otro
+         * orden en la consulta de la pagina siguiente, y uno no saldria en ninguna de las dos.
+         */
+        @Test
+        void eventsOfOneMillisecondSplitByAPageBoundaryAreAllReadEvenIfKeycloakReordersThem() {
+            long base = 1_700_000_000_000L;
+            FakeEventsClient client = new FakeEventsClient() {
+                @Override
+                public List<KeycloakEvent> loginEvents(int first, int max) {
+                    // El empate cambia de orden segun la pagina que se pida, como una ordenacion no estable.
+                    List<KeycloakEvent> ordered = new ArrayList<>(login);
+                    Comparator<KeycloakEvent> ties = Comparator.comparing(KeycloakEvent::userId);
+                    ordered.sort(Comparator.comparing(KeycloakEvent::time).reversed()
+                            .thenComparing(first % 2 == 0 ? ties : ties.reversed()));
+                    loginCalls.incrementAndGet();
+                    return ordered.subList(Math.min(first, ordered.size()), Math.min(first + max, ordered.size()));
+                }
+            };
+            client.login.add(login(base + 5000, "n1"));
+            client.login.add(login(base + 4000, "n2"));
+            for (String tied : List.of("a", "b", "c", "d")) {
+                client.login.add(login(base + 3000, tied));
+            }
+            client.login.add(login(base + 2000, "o1"));
+            client.login.add(login(base + 1000, "o2"));
+            FakeInbox inbox = new FakeInbox();
+            FakeCursors cursors = new FakeCursors(Instant.ofEpochMilli(base));
+            KeycloakProperties props = new KeycloakProperties("http://kc", "mto", "reg", null,
+                    new KeycloakProperties.Events(true, true, true, null, null, 3, 10, Duration.ZERO, null, null, null, null, null), null);
+
+            poller(client, inbox, cursors, props).poll(SourceKind.KEYCLOAK_LOGIN);
+
+            assertEquals(Set.of("n1", "n2", "a", "b", "c", "d", "o1", "o2"), Set.copyOf(inbox.processed));
+            assertEquals(8, inbox.processed.size());
+        }
+
+        // --- Un evento que falla ---
+
+        /**
+         * Un evento con una forma que el adaptador no espera lanzaba fuera del try: la pasada entera fallaba,
+         * la marca no avanzaba y la siguiente tropezaba en el mismo sitio, para siempre.
+         */
+        @Test
+        void anEventTheAdapterCannotReadStaysFailedWithItsReasonAndDoesNotStopTheOthers() {
+            FakeEventsClient client = new FakeEventsClient();
+            long base = Instant.now().toEpochMilli() - 10_000;
+            client.login.add(login(base + 3000, "newer"));
+            client.login.add(login(base + 2000, "bad"));
+            client.login.add(login(base + 1000, "older"));
+            KeycloakLoginEventAdapter throwing = new KeycloakLoginEventAdapter() {
+                @Override
+                public Optional<ActivityEventDraft> toDraft(KeycloakEvent event) {
+                    if ("bad".equals(event.userId())) {
+                        throw new IllegalArgumentException("unexpected shape");
+                    }
+                    return super.toDraft(event);
+                }
+            };
+            FakeInbox inbox = new FakeInbox();
+            FakeCursors cursors = new FakeCursors(null);
+            SimpleMeterRegistry meters = new SimpleMeterRegistry();
+            KeycloakEventsPollerImpl poller = new KeycloakEventsPollerImpl(client, throwing, adminAdapter, inbox, mock(ActivityIngestor.class),
+                    cursors, keycloakProperties(), JSON, meters, Clock.systemUTC());
+
+            KeycloakEventsPoller.PollSummary summary = poller.poll(SourceKind.KEYCLOAK_LOGIN);
+
+            assertNull(summary.error(), summary.error());
+            assertEquals(List.of("older", "newer"), inbox.processed);
+            assertEquals(1, summary.failed());
+            assertEquals(1, inbox.failures.size());
+            assertTrue(inbox.failures.values().iterator().next().getMessage().contains("unexpected shape"));
+            assertEquals(Instant.ofEpochMilli(base + 3000), cursors.watermark, "el fallido esta en el inbox: la marca pasa");
+            assertEquals(1.0, meters.counter(KeycloakEventsPollerImpl.EVENTS_METER, "source", "keycloak-login", "result", "failed").count());
+
+            // La pasada siguiente lo relee por el solape, pero no lo vuelve a intentar: eso es del reintento, con su espera.
+            KeycloakEventsPoller.PollSummary second = poller.poll(SourceKind.KEYCLOAK_LOGIN);
+            assertEquals(0, second.failed());
+            assertEquals(1, inbox.attempts.values().iterator().next());
+        }
+
+        /** Keycloak deja de responder a mitad (el adaptador de administracion pregunta por el cliente): no es culpa del evento. */
+        @Test
+        void keycloakGoingDownInTheMiddleOfAPassStopsItWithTheWatermarkBeforeThatEvent() {
+            long base = Instant.now().toEpochMilli() - 10_000;
+            KeycloakEventsClient client = mock(KeycloakEventsClient.class);
+            when(client.adminEvents(anyInt(), anyInt())).thenReturn(List.of(
+                    adminEvent(base + 3000, "3c3c3c3c-1111-4222-8333-444444444444"),
+                    adminEvent(base + 2000, "2b2b2b2b-1111-4222-8333-444444444444"),
+                    adminEvent(base + 1000, "1a1a1a1a-1111-4222-8333-444444444444")));
+            when(directory.findClientById("1a1a1a1a-1111-4222-8333-444444444444")).thenReturn(Optional.empty());
+            when(directory.findClientById("2b2b2b2b-1111-4222-8333-444444444444")).thenThrow(new DirectoryUnavailableException("Keycloak is down"));
+            FakeInbox inbox = new FakeInbox();
+            FakeCursors cursors = new FakeCursors(null);
+
+            KeycloakEventsPoller.PollSummary summary = poller(client, inbox, cursors, keycloakProperties()).poll(SourceKind.KEYCLOAK_ADMIN);
+
+            assertNotNull(summary.error());
+            assertEquals(1, summary.ingested());
+            assertTrue(inbox.failures.isEmpty(), "Keycloak caido no deja ningun evento FAILED");
+            assertEquals(Instant.ofEpochMilli(base + 1000), cursors.watermark, "la marca no pasa del que no se pudo leer");
+            assertEquals("DirectoryUnavailableException: Keycloak is down", cursors.error);
+        }
+
+        /** La base no responde: ni se ingiere ni se puede apuntar el fallo. La marca se queda y la pasada siguiente lo reintenta. */
+        @Test
+        void aFailureThatCannotEvenBeRecordedHoldsTheWatermarkSoTheEventIsReadAgain() {
+            FakeEventsClient client = new FakeEventsClient();
+            long base = Instant.now().toEpochMilli() - 10_000;
+            client.login.add(login(base + 3000, "newer"));
+            client.login.add(login(base + 2000, "unlucky"));
+            client.login.add(login(base + 1000, "older"));
+            FakeInbox inbox = new FakeInbox();
+            inbox.databaseDownFor = "unlucky";
+            FakeCursors cursors = new FakeCursors(null);
+            KeycloakEventsPollerImpl poller = poller(client, inbox, cursors, keycloakProperties());
+
+            KeycloakEventsPoller.PollSummary summary = poller.poll(SourceKind.KEYCLOAK_LOGIN);
+
+            assertNotNull(summary.error());
+            assertEquals(List.of("older"), inbox.processed);
+            assertEquals(Instant.ofEpochMilli(base + 1000), cursors.watermark);
+
+            inbox.databaseDownFor = null;
+            assertNull(poller.poll(SourceKind.KEYCLOAK_LOGIN).error());
+            assertEquals(List.of("older", "unlucky", "newer"), inbox.processed);
+        }
+
+        /** Lo que fallo se reintenta desde el JSON del inbox, sin volver a pedirlo a Keycloak, y agotados los intentos queda fallido. */
+        @Test
+        void aFailedEventIsRetriedFromTheInboxAndGivenUpAfterItsAttempts() {
+            long base = 1_700_000_000_000L;
+            KeycloakEvent flaky = login(base, "flaky");
+            KeycloakEvent hopeless = login(base + 1, "hopeless");
+            FakeInbox inbox = new FakeInbox();
+            inbox.due.add(new FailedInboxMessage(KeycloakLoginEventAdapter.fingerprint(flaky), "LOGIN", "user", "flaky", "h", flaky.raw(), 1));
+            inbox.due.add(new FailedInboxMessage(KeycloakLoginEventAdapter.fingerprint(hopeless), "LOGIN", "user", "hopeless", "h", hopeless.raw(), 2));
+            inbox.poison = "hopeless";
+            ActivityIngestor ingestor = mock(ActivityIngestor.class);
+            SimpleMeterRegistry meters = new SimpleMeterRegistry();
+            KeycloakEventsPollerImpl poller = new KeycloakEventsPollerImpl(new FakeEventsClient(), loginAdapter, adminAdapter, inbox, ingestor,
+                    new FakeCursors(Instant.ofEpochMilli(base + 60_000L)),
+                    smallChunks(Duration.ZERO, null, new KeycloakProperties.Retry(3, null, null, 0)), JSON, meters, Clock.systemUTC());
+
+            KeycloakEventsPoller.PollSummary summary = poller.poll(SourceKind.KEYCLOAK_LOGIN);
+
+            assertNull(summary.error());
+            assertEquals(1, summary.recovered());
+            assertEquals(1, summary.failed());
+            ActivityEventDraft recovered = ingested(ingestor);
+            assertEquals(ActivityTypes.ACCESS_LOGIN, recovered.type());
+            assertEquals("flaky", recovered.actor().username());
+            assertEquals(KeycloakLoginEventAdapter.fingerprint(flaky), recovered.sourceEventId(), "la misma linea que habria dejado la primera vez");
+            assertEquals(List.of(3, Duration.ofMinutes(1), Duration.ofMinutes(30), 50), inbox.asked, "tope, espera y lote de la configuracion");
+            assertEquals(1.0, meters.counter(KeycloakEventsPollerImpl.EVENTS_METER, "source", "keycloak-login", "result", "recovered").count());
+            assertEquals(1.0, meters.counter(KeycloakEventsPollerImpl.EVENTS_METER, "source", "keycloak-login", "result", "terminal").count(),
+                    "el tercer fallo de tres es el ultimo: lo ve quien explota el servicio");
+        }
+
+        private static KeycloakAdminEvent adminEvent(long time, String clientUuid) {
+            return new KeycloakAdminEvent(time, "realm", new KeycloakAdminEvent.AuthDetails("realm", clientUuid, "someone", null),
+                    "UPDATE", "USER", "users/" + USER_ID, null, null, "{\"time\":" + time + "}");
+        }
+
+        /** El inbox en memoria: aplica una vez, recuerda lo fallido y sus intentos. */
+        private static final class FakeInbox implements InboxMessageService {
+            private final List<String> processed = new ArrayList<>();
+            private final Set<String> applied = new java.util.HashSet<>();
+            private final Map<String, Throwable> failures = new java.util.LinkedHashMap<>();
+            private final Map<String, Integer> attempts = new java.util.HashMap<>();
+            private final List<FailedInboxMessage> due = new ArrayList<>();
+            private List<Object> asked;
+            private String poison;
+            private String databaseDownFor;
+            private Runnable onProcess = () -> { };
+
+            @Override
+            public InboxProcessingResult process(InboxMessageCommand command, Runnable processing) {
+                if (command.aggregateId().equals(databaseDownFor)) {
+                    throw new IllegalStateException("could not open a connection");
+                }
+                if (command.aggregateId().equals(poison)) {
+                    throw new IllegalStateException("poison");
+                }
+                if (!applied.add(command.messageId())) {
+                    return InboxProcessingResult.DUPLICATE_SKIPPED;
+                }
+                processing.run();
+                onProcess.run();
+                processed.add(command.aggregateId());
+                failures.remove(command.messageId());
+                return InboxProcessingResult.PROCESSED;
+            }
+
+            @Override
+            public void recordFailure(InboxMessageCommand command, Throwable failure) {
+                if (command.aggregateId().equals(databaseDownFor)) {
+                    throw new IllegalStateException("could not open a connection");
+                }
+                failures.put(command.messageId(), failure);
+                attempts.merge(command.messageId(), 1, Integer::sum);
+            }
+
+            @Override
+            public Set<String> failedAmong(String sourceService, java.util.Collection<String> messageIds) {
+                Set<String> failed = new java.util.HashSet<>(failures.keySet());
+                failed.retainAll(messageIds);
+                return failed;
+            }
+
+            @Override
+            public List<FailedInboxMessage> failedDueForRetry(String sourceService, int maxAttempts, Duration backoff, Duration maxBackoff, int batchSize) {
+                asked = List.of(maxAttempts, backoff, maxBackoff, batchSize);
+                return List.copyOf(due);
+            }
+        }
+
+        /** La marca y el arrendamiento en memoria, con las reglas de la base: la marca nunca hacia atras. */
+        private static final class FakeCursors implements SourceCursorService {
+            private Instant watermark;
+            private boolean released;
+            private boolean leaseLost;
+            private int advances;
+            private String error;
+
+            FakeCursors(Instant watermark) {
+                this.watermark = watermark;
+            }
+
+            @Override
+            public Optional<Lease> acquire(SourceKind kind) {
+                released = false;
+                return Optional.of(new Lease(kind, "me", watermark, null));
+            }
+
+            @Override
+            public boolean advance(Lease lease, Instant lastEventTime) {
+                if (leaseLost) {
+                    return false;
+                }
+                advances++;
+                move(lastEventTime);
+                return true;
+            }
+
+            @Override
+            public void release(Lease lease, Instant lastEventTime, String error) {
+                move(lastEventTime);
+                this.error = error;
+                released = true;
+            }
+
+            @Override
+            public List<com.alejandro.mtonotification.infrastructure.persistence.entity.SourceCursor> all() {
+                return List.of();
+            }
+
+            private void move(Instant to) {
+                if (to != null && (watermark == null || to.isAfter(watermark))) {
+                    watermark = to;
+                }
+            }
+        }
+
         /** Un reloj que solo avanza cuando el test lo dice. */
         private static final class MutableClock extends Clock {
             private Instant now;
@@ -699,9 +1098,9 @@ class BusinessLayerTest {
             }
         }
 
-        private final class FakeEventsClient implements KeycloakEventsClient {
-            private final List<KeycloakEvent> login = new ArrayList<>();
-            private final AtomicInteger loginCalls = new AtomicInteger();
+        private class FakeEventsClient implements KeycloakEventsClient {
+            final List<KeycloakEvent> login = new ArrayList<>();
+            final AtomicInteger loginCalls = new AtomicInteger();
 
             @Override
             public List<KeycloakEvent> loginEvents(int first, int max) {

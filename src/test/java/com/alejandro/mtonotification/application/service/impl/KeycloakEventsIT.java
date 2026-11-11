@@ -1,7 +1,13 @@
 package com.alejandro.mtonotification.application.service.impl;
 
 import com.alejandro.mtonotification.application.dto.delivery.Recipient;
+import com.alejandro.mtonotification.application.dto.keycloak.KeycloakAdminEvent;
+import com.alejandro.mtonotification.application.dto.keycloak.KeycloakEvent;
+import com.alejandro.mtonotification.application.service.ActivityIngestor;
 import com.alejandro.mtonotification.application.service.AudienceResolver;
+import com.alejandro.mtonotification.application.service.InboxMessageService;
+import com.alejandro.mtonotification.application.service.KeycloakEventsClient;
+import com.alejandro.mtonotification.configuration.keycloak.KeycloakProperties;
 import com.alejandro.mtonotification.application.service.KeycloakEventsPoller;
 import com.alejandro.mtonotification.application.service.SourceCursorService;
 import com.alejandro.mtonotification.domain.model.ActivityTypes;
@@ -23,6 +29,7 @@ import com.alejandro.mtonotification.infrastructure.persistence.repository.Notif
 import com.alejandro.mtonotification.infrastructure.persistence.repository.NotificationRepository;
 import com.alejandro.mtonotification.infrastructure.persistence.specification.ActivityEventSpecification;
 import com.alejandro.mtonotification.support.PostgreSQLTestContainer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,10 +51,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -167,6 +176,27 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
     @Autowired
     private InboxMessageRepository inboxMessageRepository;
 
+    @Autowired
+    private KeycloakEventsClient eventsClient;
+
+    @Autowired
+    private KeycloakLoginEventAdapter loginAdapter;
+
+    @Autowired
+    private KeycloakAdminEventAdapter adminAdapter;
+
+    @Autowired
+    private InboxMessageService inboxMessageService;
+
+    @Autowired
+    private ActivityIngestor activityIngestor;
+
+    @Autowired
+    private KeycloakProperties keycloakProperties;
+
+    @Autowired
+    private JsonMapper jsonMapper;
+
     @Test
     void loginsFailuresAndConsoleChangesAreReadOnceAndTurnedIntoActivityAndNotifications() throws Exception {
         // Un acceso que va bien, tres que fallan y un cambio hecho desde fuera de la aplicacion.
@@ -259,6 +289,89 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
                 .and(ActivityEventSpecification.actorUsernameEquals("auditor"))));
     }
 
+    /**
+     * Mas accesos desde la marca de los que caben en un tramo (aqui, diez): el lector los lee por
+     * tramos desde el mas antiguo, buscando con peticiones de un evento a que profundidad esta la
+     * marca, y en una sola pasada no se deja ninguno.
+     */
+    @Test
+    void aBurstBiggerThanOneChunkIsReadWholeFromTheOldestInOnePass() throws Exception {
+        int burst = 43;
+        long alreadyThere = activityEventRepository.count(ActivityEventSpecification.typeEquals(ActivityTypes.ACCESS_LOGIN)
+                .and(ActivityEventSpecification.actorUsernameEquals("responsable")));
+        for (int login = 0; login < burst; login++) {
+            assertEquals(200, tokenRequest("responsable", "responsable").statusCode());
+        }
+        AtomicInteger probes = new AtomicInteger();
+        AtomicInteger biggestPage = new AtomicInteger();
+        KeycloakEventsClient counting = new KeycloakEventsClient() {
+            @Override
+            public List<KeycloakEvent> loginEvents(int first, int max) {
+                if (max == 1) {
+                    probes.incrementAndGet();
+                }
+                biggestPage.accumulateAndGet(max, Math::max);
+                return eventsClient.loginEvents(first, max);
+            }
+
+            @Override
+            public List<KeycloakAdminEvent> adminEvents(int first, int max) {
+                return eventsClient.adminEvents(first, max);
+            }
+        };
+        KeycloakProperties small = new KeycloakProperties(keycloakProperties.baseUrl(), keycloakProperties.realm(),
+                keycloakProperties.clientRegistrationId(), null,
+                new KeycloakProperties.Events(true, true, true, null, null, 5, 2, Duration.ZERO, Duration.ofHours(1), null, null, null, null), null);
+        KeycloakEventsPollerImpl reader = new KeycloakEventsPollerImpl(counting, loginAdapter, adminAdapter, inboxMessageService,
+                activityIngestor, cursorService, small, jsonMapper, new SimpleMeterRegistry(), Clock.systemUTC());
+
+        KeycloakEventsPoller.PollSummary summary = reader.poll(SourceKind.KEYCLOAK_LOGIN);
+
+        assertNull(summary.error(), summary.error());
+        assertEquals(0, summary.failed());
+        assertTrue(probes.get() > 0, "no cabia en un tramo: se busco la marca por biseccion");
+        assertTrue(biggestPage.get() <= 20, "y nunca se pidio de una vez mas que un par de paginas: " + biggestPage.get());
+        assertEquals(alreadyThere + burst, activityEventRepository.count(ActivityEventSpecification.typeEquals(ActivityTypes.ACCESS_LOGIN)
+                .and(ActivityEventSpecification.actorUsernameEquals("responsable"))), "todos los accesos de la rafaga, ni uno menos: " + summary);
+
+        long before = activityEventRepository.count();
+        KeycloakEventsPoller.PollSummary again = reader.poll(SourceKind.KEYCLOAK_LOGIN);
+        assertEquals(0, again.ingested(), again.toString());
+        assertEquals(before, activityEventRepository.count(), "y la pasada siguiente no repite ninguno");
+    }
+
+    /**
+     * Lo que el lector da por hecho de la Admin API de Keycloak 26.1, comprobado contra el de verdad:
+     * los eventos salen del mas nuevo al mas antiguo, se paginan con first/max a cualquier profundidad,
+     * no hay orden ascendente ({@code direction} se ignora) y la fecha solo filtra por dia
+     * ({@code yyyy-MM-dd}; un instante es un 400). Por eso la marca se cruza paginando.
+     */
+    @Test
+    void theAdminApiOnlyPagesNewestFirstAndFiltersByWholeDays() throws Exception {
+        for (int login = 0; login < 6; login++) {
+            assertEquals(200, tokenRequest("impostor", "impostor").statusCode());
+        }
+        String token = adminToken();
+
+        List<Long> all = times(adminGet(token, "/events?max=500"));
+        assertTrue(all.size() >= 6, all.toString());
+        assertEquals(all.stream().sorted(java.util.Comparator.reverseOrder()).toList(), all, "del mas nuevo al mas antiguo");
+        assertEquals(all.subList(2, 4), times(adminGet(token, "/events?first=2&max=2")), "first/max sobre ese mismo orden");
+        assertEquals(List.of(all.getLast()), times(adminGet(token, "/events?first=" + (all.size() - 1) + "&max=1")), "hasta el ultimo");
+        assertEquals(List.of(), times(adminGet(token, "/events?first=" + all.size() + "&max=1")), "y pasado el ultimo, vacio");
+        assertEquals(all.subList(0, 3), times(adminGet(token, "/events?max=3&direction=asc")), "no hay orden ascendente");
+
+        long anInstant = all.getLast();
+        assertEquals(400, adminGet(token, "/events?dateFrom=" + anInstant).statusCode(), "la fecha no admite un instante");
+        assertEquals(400, adminGet(token, "/admin-events?dateFrom=" + anInstant).statusCode());
+        String today = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString();
+        assertEquals(200, adminGet(token, "/events?dateFrom=" + today.substring(0, 4) + "-01-01&max=1").statusCode(), "solo un dia");
+
+        List<Long> adminTimes = times(adminGet(token, "/admin-events?max=500"));
+        assertEquals(adminTimes.stream().sorted(java.util.Comparator.reverseOrder()).toList(), adminTimes);
+        assertEquals(adminTimes.subList(0, 1), times(adminGet(token, "/admin-events?max=1&direction=asc")));
+    }
+
     @Test
     void theDirectoryResolvesUsersProfilesAndClientRolesToAddresses() {
         assertEquals(List.of(new Recipient("lector", "lector@mto.local")), audienceResolver.resolve(Audience.user("lector")));
@@ -315,6 +428,20 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
                 .PUT(HttpRequest.BodyPublishers.ofString("{\"enabled\": false}"))
                 .build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(204, update.statusCode(), update.body());
+    }
+
+    private static HttpResponse<String> adminGet(String token, String pathAndQuery) throws Exception {
+        return HTTP.send(HttpRequest.newBuilder().uri(URI.create(baseUrl() + "/admin/realms/" + REALM + pathAndQuery))
+                .header("Authorization", "Bearer " + token).GET().build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static List<Long> times(HttpResponse<String> response) {
+        assertEquals(200, response.statusCode(), response.body());
+        List<Long> times = new java.util.ArrayList<>();
+        for (JsonNode event : JSON.readTree(response.body())) {
+            times.add(event.get("time").asLong());
+        }
+        return times;
     }
 
     private static HttpResponse<String> post(String url, String form) throws Exception {

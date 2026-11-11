@@ -21,7 +21,8 @@ import java.util.function.IntSupplier;
 
 /**
  * La purga: cada tabla con su retencion, por lotes y cada lote en su transaccion, con un tope de
- * lotes por pasada para que una tabla muy atrasada no bloquee la noche entera. Keycloak caduca
+ * lotes por pasada para que una tabla muy atrasada no bloquee la noche entera. Del inbox se va lo
+ * aplicado y, con su propia retencion, lo que quedo FAILED. Keycloak caduca
  * sus eventos a los 7 dias: este servicio es el archivo, y por eso los accesos duran 90.
  */
 @Service
@@ -67,6 +68,7 @@ class RetentionPurgeImpl implements RetentionPurge {
         deleted.put("activity_event." + ActivityCategory.SYSTEM, purgeCategory(ActivityCategory.SYSTEM, retention.activity().system(), now, batch));
         deleted.put("notification", loop(() -> notificationRepository.deleteCreatedBefore(now.minus(retention.notifications()), batch)));
         deleted.put("inbox_message", loop(() -> inboxMessageRepository.deleteProcessedBefore(now.minus(retention.inbox()), batch)));
+        deleted.put("inbox_message.failed", loop(() -> inboxMessageRepository.deleteFailedBefore(now.minus(retention.inboxFailed()), batch)));
         deleted.put("activity_burst", loop(() -> burstRepository.deleteClosedBefore(now.minus(retention.bursts()), batch)));
         deleted.put("rule_throttle", loop(() -> throttleRepository.deleteExpiredBefore(now.minus(retention.throttles()), batch)));
 

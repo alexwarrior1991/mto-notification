@@ -38,7 +38,7 @@ public record NotificationProperties(
         inbox = inbox == null ? new Inbox(0, 0) : inbox;
         delivery = delivery == null ? new Delivery(true, null, null, 0, 0, null, null, null, true) : delivery;
         email = email == null ? new Email(true, null, null, null, 0) : email;
-        retention = retention == null ? new Retention(true, null, 0, 0, null, null, null, null, null) : retention;
+        retention = retention == null ? new Retention(true, null, 0, 0, null, null, null, null, null, null) : retention;
     }
 
     /** {@code vars['...']} en las expresiones de las reglas. */
@@ -145,7 +145,7 @@ public record NotificationProperties(
 
     public record Retention(boolean purgeEnabled, String cron, int batchSize, int maxBatchesPerRun,
                             ActivityRetention activity, Duration notifications, Duration inbox, Duration bursts,
-                            Duration throttles) {
+                            Duration throttles, Duration inboxFailed) {
         public Retention {
             cron = cron == null || cron.isBlank() ? "0 17 3 * * *" : cron;
             batchSize = batchSize <= 0 ? 1000 : batchSize;
@@ -155,6 +155,7 @@ public record NotificationProperties(
             inbox = inbox == null ? Duration.ofDays(7) : inbox;
             bursts = bursts == null ? Duration.ofDays(1) : bursts;
             throttles = throttles == null ? Duration.ofDays(1) : throttles;
+            inboxFailed = inboxFailed == null ? Duration.ofDays(30) : inboxFailed;
         }
     }
 
