@@ -76,6 +76,20 @@ class KeycloakEventsClientTest {
         assertEquals("{\"enabled\":false}", events.getFirst().representation());
     }
 
+    /** Lo que pide el lector para saber a que profundidad esta su marca: un evento, a la profundidad que sea. */
+    @Test
+    void oneEventIsAskedForAtAnyDepthAndPastTheEndThePageIsEmpty() {
+        server.expect(requestTo(BASE + "/events?first=7500&max=1")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        [{"time":1700000001000,"type":"LOGIN","realmId":"r","clientId":"mto-frontend","userId":"u1"}]
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE + "/admin-events?first=15000&max=1")).andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+        assertEquals(1_700_000_001_000L, eventsClient.loginEvents(7500, 1).getFirst().time());
+        assertTrue(eventsClient.adminEvents(15000, 1).isEmpty());
+        server.verify();
+    }
+
     @Test
     void anEmptyBodyIsAnEmptyPage() {
         server.expect(requestTo(BASE + "/events?first=0&max=100")).andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));

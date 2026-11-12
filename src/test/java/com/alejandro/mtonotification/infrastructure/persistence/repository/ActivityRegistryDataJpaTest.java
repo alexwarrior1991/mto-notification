@@ -4,6 +4,8 @@ import com.alejandro.mtonotification.application.service.ActivityIngestor;
 import com.alejandro.mtonotification.application.service.BurstAggregator;
 import com.alejandro.mtonotification.application.service.RetentionPurge;
 import com.alejandro.mtonotification.application.service.RuleEngine;
+import com.alejandro.mtonotification.application.dto.messaging.FailedInboxMessage;
+import com.alejandro.mtonotification.application.service.InboxMessageService;
 import com.alejandro.mtonotification.application.service.SourceCursorService;
 import com.alejandro.mtonotification.application.service.ThrottleGate;
 import com.alejandro.mtonotification.configuration.keycloak.KeycloakProperties;
@@ -101,7 +103,8 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
     @ComponentScan(basePackages = "com.alejandro.mtonotification.application.service.impl", useDefaultFilters = false,
             includeFilters = @ComponentScan.Filter(type = FilterType.REGEX, pattern = {
                     ".*\\.JsonPayloads", ".*\\.ActivityIngestorImpl", ".*\\.FailedLoginStreakDetector", ".*\\.UsersChangeCorrelator",
-                    ".*\\.BurstAggregatorImpl", ".*\\.ThrottleGateImpl", ".*\\.RetentionPurgeImpl", ".*\\.SourceCursorServiceImpl"}))
+                    ".*\\.BurstAggregatorImpl", ".*\\.ThrottleGateImpl", ".*\\.RetentionPurgeImpl", ".*\\.SourceCursorServiceImpl",
+                    ".*\\.InboxMessageServiceImpl"}))
     static class RegistryServicesConfiguration {
     }
 
@@ -139,6 +142,12 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
 
     @Autowired
     private RetentionPurge retentionPurge;
+
+    @Autowired
+    private InboxMessageRepository inboxMessageRepository;
+
+    @Autowired
+    private InboxMessageService inboxMessageService;
 
     @Autowired
     private TransactionTemplate transactionTemplate;
@@ -521,7 +530,84 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
         assertEquals("vivo", cursor(SourceKind.KEYCLOAK_ADMIN).getLeaseOwner());
     }
 
+    @Test
+    void aLongPassRenewsItsLeaseAndMovesTheWatermarkUntilAnotherReaderTakesTheSource() {
+        SourceCursorService.Lease lease = sourceCursorService.acquire(SourceKind.KEYCLOAK_LOGIN).orElseThrow();
+        entityManager.createNativeQuery("update source_cursor set lease_until = now() + interval '1 second' where kind = 'KEYCLOAK_LOGIN'").executeUpdate();
+        Instant t1 = Instant.parse("2026-09-28T10:00:00Z");
+
+        assertTrue(sourceCursorService.advance(lease, t1), "sigue siendo suya");
+        SourceCursor cursor = cursor(SourceKind.KEYCLOAK_LOGIN);
+        assertEquals(t1, cursor.getLastEventTime(), "la marca sube a lo ya procesado sin soltar la fuente");
+        assertEquals(lease.owner(), cursor.getLeaseOwner());
+        assertTrue(cursor.getLeaseUntil().isAfter(Instant.now().plusSeconds(60)), "y el arrendamiento se renueva entero");
+        assertTrue(sourceCursorService.acquire(SourceKind.KEYCLOAK_LOGIN).isEmpty(), "nadie mas la toma mientras tanto");
+
+        assertTrue(sourceCursorService.advance(lease, t1.minusSeconds(60)));
+        assertTrue(sourceCursorService.advance(lease, null));
+        assertEquals(t1, cursor(SourceKind.KEYCLOAK_LOGIN).getLastEventTime(), "nunca hacia atras, y sin instante se queda");
+
+        // El arrendamiento caduco y otra instancia lo tomo: la primera lo nota y no mueve la marca de la otra.
+        entityManager.createNativeQuery("update source_cursor set lease_owner = 'otra' where kind = 'KEYCLOAK_LOGIN'").executeUpdate();
+        assertFalse(sourceCursorService.advance(lease, t1.plusSeconds(3600)));
+        assertEquals(t1, cursor(SourceKind.KEYCLOAK_LOGIN).getLastEventTime());
+    }
+
+    // --- los fallidos del inbox ---
+
+    @Test
+    void aFailedMessageIsDueForRetryOnlyAfterItsDoublingBackoffAndWhileItHasAttemptsLeft() {
+        String source = "retry-" + UUID.randomUUID();
+        failedInbox(source, "first-failure-2m-ago", 1, "2 minutes");
+        failedInbox(source, "first-failure-10s-ago", 1, "10 seconds");
+        failedInbox(source, "second-failure-90s-ago", 2, "90 seconds");
+        failedInbox(source, "second-failure-3m-ago", 2, "3 minutes");
+        failedInbox(source, "third-failure-1d-ago", 3, "1 day");
+        failedInbox("other-" + source, "of-another-source", 1, "1 hour");
+        inboxMessageRepository.insertIfMissing("applied", source, "LOGIN", "user", "u", null, null, null, "h", "{\"n\": 0}");
+
+        // Tres intentos como mucho, un minuto tras el primer fallo y el doble tras cada uno.
+        List<FailedInboxMessage> due = inboxMessageService.failedDueForRetry(source, 3, Duration.ofMinutes(1), Duration.ofMinutes(30), 10);
+
+        assertEquals(List.of("second-failure-3m-ago", "first-failure-2m-ago"), due.stream().map(FailedInboxMessage::messageId).toList(),
+                "del que mas lleva esperando al que menos; ni el que aun espera, ni el que agoto sus intentos, ni otra fuente");
+        assertEquals("{\"n\": 1, \"id\": \"first-failure-2m-ago\"}", due.get(1).payload(), "el JSON tal como llego, para volver a aplicarlo");
+        assertEquals(1, due.get(1).attempts());
+        assertEquals("LOGIN", due.get(1).eventType());
+
+        // Con mas intentos la espera sigue doblandose hasta su tope: el tercer fallo espera 4 minutos, no 1 dia.
+        assertEquals(List.of("third-failure-1d-ago", "second-failure-3m-ago", "first-failure-2m-ago"),
+                inboxMessageService.failedDueForRetry(source, 10, Duration.ofMinutes(1), Duration.ofMinutes(30), 10).stream()
+                        .map(FailedInboxMessage::messageId).toList());
+        assertEquals(1, inboxMessageService.failedDueForRetry(source, 10, Duration.ofMinutes(1), Duration.ofMinutes(30), 1).size(), "por lotes");
+        assertTrue(inboxMessageService.failedDueForRetry(source, 10, Duration.ofHours(48), Duration.ofHours(96), 10).isEmpty());
+        assertEquals(List.of("third-failure-1d-ago", "second-failure-3m-ago", "first-failure-2m-ago"),
+                inboxMessageService.failedDueForRetry(source, 10, Duration.ofHours(48), Duration.ofSeconds(100), 10).stream()
+                        .map(FailedInboxMessage::messageId).toList(), "el tope manda sobre la espera doblada");
+
+        assertEquals(Set.of("first-failure-10s-ago", "third-failure-1d-ago"),
+                inboxMessageService.failedAmong(source, List.of("first-failure-10s-ago", "third-failure-1d-ago", "applied", "never-seen")));
+    }
+
     // --- purga ---
+
+    @Test
+    void thePurgeAlsoDeletesTheFailedInboxRowsOnceTheirOwnRetentionIsOver() {
+        String source = "purge-" + UUID.randomUUID();
+        failedInbox(source, "failed-long-ago", 5, "31 days");
+        failedInbox(source, "failed-last-week", 5, "8 days");
+        entityManager.createNativeQuery("update inbox_message set received_at = now() - interval '40 days' where source_service = :source")
+                .setParameter("source", source).executeUpdate();
+
+        Map<String, Integer> deleted = retentionPurge.purge();
+
+        assertTrue(deleted.get("inbox_message.failed") >= 1, deleted.toString());
+        entityManager.clear();
+        assertTrue(inboxMessageRepository.findByMessageIdAndSourceService("failed-long-ago", source).isEmpty(),
+                "30 dias para lo que fallo y ya nadie reintenta");
+        assertTrue(inboxMessageRepository.findByMessageIdAndSourceService("failed-last-week", source).isPresent(),
+                "un fallido no se va con los 7 dias de lo aplicado: es lo que mira quien explota el servicio");
+    }
 
     @Test
     void thePurgeDeletesByCategoryAndAgeAndLeavesTheRest() {
@@ -550,6 +636,17 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
     }
 
     // --- soporte ---
+
+    /** Un mensaje que fallo {@code attempts} veces, la ultima hace {@code ago}. */
+    private void failedInbox(String source, String messageId, int attempts, String ago) {
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            inboxMessageRepository.recordFailure(messageId, source, "LOGIN", "user", "u", null, null, null, "h",
+                    "{\"n\": " + attempts + ", \"id\": \"" + messageId + "\"}", "IllegalStateException: boom");
+        }
+        entityManager.createNativeQuery("update inbox_message set failed_at = now() - cast(:ago as interval) "
+                        + "where message_id = :messageId and source_service = :source")
+                .setParameter("ago", ago).setParameter("messageId", messageId).setParameter("source", source).executeUpdate();
+    }
 
     private static ActivityEventDraft failedLogin(String username, String ip, String fingerprint, Instant at) {
         return ActivityEventDraft.builder()

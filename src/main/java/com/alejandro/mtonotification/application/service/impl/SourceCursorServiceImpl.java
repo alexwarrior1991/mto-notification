@@ -46,6 +46,13 @@ class SourceCursorServiceImpl implements SourceCursorService {
 
     @Override
     @Transactional
+    public boolean advance(Lease lease, Instant lastEventTime) {
+        return repository.renewLease(lease.kind().name(), lease.owner(), lastEventTime,
+                Instant.now().plus(properties.events().leaseTtl())) > 0;
+    }
+
+    @Override
+    @Transactional
     public void release(Lease lease, Instant lastEventTime, String error) {
         repository.release(lease.kind().name(), lease.owner(), lastEventTime, error);
     }

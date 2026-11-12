@@ -14,6 +14,9 @@ public enum InboxMessageStatus {
     /** Aplicado. Una entrega posterior del mismo mensaje se descarta sin ejecutar nada. */
     PROCESSED,
 
-    /** El manejador fallo; la fila conserva el motivo y una reentrega vuelve a reclamarla. */
+    /**
+     * El manejador fallo; la fila conserva el motivo y una reentrega vuelve a reclamarla. Un evento de
+     * Keycloak lo reintenta su lector desde aqui, con un tope de intentos; pasada su retencion se purga.
+     */
     FAILED
 }

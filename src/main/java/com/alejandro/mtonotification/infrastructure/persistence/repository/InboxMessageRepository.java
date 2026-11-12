@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -130,6 +131,67 @@ public interface InboxMessageRepository extends JpaRepository<InboxMessage, UUID
             @Param("payload") String payload,
             @Param("failureReason") String failureReason
     );
+
+    /** De estos mensajes de una fuente, los que estan FAILED: los lleva el reintento, no la relectura. */
+    @Query(value = """
+            select message_id from inbox_message
+             where source_service = :sourceService and status = 'FAILED' and message_id in (:messageIds)
+            """, nativeQuery = true)
+    List<String> findFailedMessageIds(@Param("sourceService") String sourceService, @Param("messageIds") Collection<String> messageIds);
+
+    /**
+     * Los FAILED de una fuente a los que les toca otro intento: les quedan intentos y ya paso su
+     * espera, que se dobla con cada fallo hasta su tope. Del mas antiguo al mas nuevo.
+     */
+    @Query(value = """
+            select message_id as "messageId", event_type as "eventType", aggregate_type as "aggregateType",
+                   aggregate_id as "aggregateId", payload_hash as "payloadHash", cast(payload as text) as "payload",
+                   processing_attempts as "attempts"
+              from inbox_message
+             where source_service = :sourceService
+               and status = 'FAILED'
+               and processing_attempts < :maxAttempts
+               and failed_at + least(cast(:maxBackoffSeconds as double precision),
+                                     cast(:backoffSeconds as double precision) * power(2, greatest(processing_attempts, 1) - 1))
+                               * interval '1 second' <= now()
+             order by failed_at, id
+             limit :batchSize
+            """, nativeQuery = true)
+    List<RetryCandidate> findFailedDueForRetry(@Param("sourceService") String sourceService, @Param("maxAttempts") int maxAttempts,
+                                               @Param("backoffSeconds") long backoffSeconds,
+                                               @Param("maxBackoffSeconds") long maxBackoffSeconds, @Param("batchSize") int batchSize);
+
+    interface RetryCandidate {
+        String getMessageId();
+
+        String getEventType();
+
+        String getAggregateType();
+
+        String getAggregateId();
+
+        String getPayloadHash();
+
+        String getPayload();
+
+        int getAttempts();
+    }
+
+    /**
+     * Purga por lotes de lo que fallo y ya nadie va a reintentar: los reintentos duran minutos y el
+     * mensaje de RabbitMQ esta en su DLQ, asi que pasada su retencion la fila solo ocupa.
+     */
+    @Modifying
+    @Query(value = """
+            delete from inbox_message
+             where id in (
+                 select id from inbox_message
+                  where status = 'FAILED' and failed_at < :before
+                  order by failed_at
+                  limit :batchSize
+             )
+            """, nativeQuery = true)
+    int deleteFailedBefore(@Param("before") Instant before, @Param("batchSize") int batchSize);
 
     /** Purga por lotes de lo ya aplicado: el JSON crudo de una fuente no vive mas de lo configurado. */
     @Modifying

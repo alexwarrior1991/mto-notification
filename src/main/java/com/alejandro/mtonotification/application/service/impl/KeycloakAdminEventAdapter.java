@@ -104,8 +104,8 @@ public class KeycloakAdminEventAdapter {
      * {@code authDetails.clientId} es el id interno del cliente (un UUID), no su {@code clientId}: se
      * resuelve en el directorio del realm y se recuerda. Un cliente que no esta en el realm (la consola
      * de {@code master}, kcadm) se queda con su UUID, que a efectos de la regla es «fuera de la
-     * aplicacion». Si el directorio no responde, el evento se queda FAILED en el inbox y la siguiente
-     * pasada lo reintenta.
+     * aplicacion». Si el directorio no responde no es culpa del evento: el lector para la pasada con
+     * la marca antes de el y la siguiente lo vuelve a leer.
      */
     String clientId(KeycloakAdminEvent event) {
         String internalId = event.clientId();

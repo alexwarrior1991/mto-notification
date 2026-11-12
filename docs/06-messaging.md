@@ -232,25 +232,65 @@ con actor `PERSON` (la consola, `kcadm`) nunca se funde: es justo lo que la regl
 
 ## El lector de Keycloak
 
-Keycloak 26.1 devuelve los eventos siempre por `time` descendente, paginados (`first`/`max`), sin
-`id` y con `dateFrom`/`dateTo` solo por día; fecha cada evento al construirlo y lo persiste al final
-de la petición. Por eso:
+Lo que la Admin API de Keycloak 26.1 da y no da (comprobado contra uno real en `KeycloakEventsIT`):
+`GET /events` y `GET /admin-events` devuelven los eventos siempre por `time` descendente, paginados
+con `first`/`max` a cualquier profundidad (sin `max`, 100); **no hay orden ascendente** (`direction`
+se ignora); `dateFrom`/`dateTo` solo admiten un día (`yyyy-MM-dd`; un instante es un 400); los eventos
+no traen `id`, y varios pueden compartir milisegundo. Keycloak fecha cada evento al construirlo y lo
+persiste al final de la petición. Por eso la marca se cruza paginando, y:
 
 1. `KeycloakEventsPoller` reclama un arrendamiento por fuente en `source_cursor` (`KEYCLOAK_LOGIN`,
-   `KEYCLOAK_ADMIN`; `lease-ttl` 2 min): una instancia a la vez.
-2. Pagina de lo más nuevo hacia atrás hasta cruzar `marca − overlap` (2 min), o hasta
-   `max-pages-per-poll`; sin marca, `initial-lookback` (1 h). Lo anterior lo tiene Keycloak 7 días.
-3. Procesa la pasada del más antiguo al más nuevo (una racha se detecta en el orden en que pasó):
+   `KEYCLOAK_ADMIN`; `lease-ttl` 2 min): una instancia a la vez. Una pasada larga lo renueva sola
+   (y sube la marca a lo ya procesado) cada tercio del plazo y entre tramo y tramo; si al renovarlo
+   ya es de otra instancia, para sin tocar nada.
+2. Reintenta los fallidos del inbox a los que les toca (abajo).
+3. Lee de lo más nuevo hacia atrás hasta cruzar `marca − overlap` (2 min); sin marca,
+   `initial-lookback` (1 h). Lo anterior lo tiene Keycloak 7 días. Si cabe en un tramo
+   (`page-size` × `max-pages-per-poll`, 5.000 eventos), lo procesa y la marca queda en el más nuevo.
+4. **Si no cabe** (una ráfaga de accesos, una importación de usuarios, el lector parado un rato),
+   nada de lo leído se procesa, porque son los más nuevos y procesarlos sería saltarse los de
+   debajo. Busca a qué profundidad está la marca (por bisección, con peticiones de un evento: la
+   lista está ordenada) y lee el tramo que queda justo encima de ella —el más antiguo— hacia atrás
+   hasta cruzarla. La marca sube al más nuevo de ese tramo y se repite hasta alcanzar la cabeza o
+   agotar `max-pass-duration` (1 min); la pasada siguiente sigue desde la marca. Leer hacia atrás
+   mientras entran eventos por la cabeza solo repite eventos, nunca se salta ninguno, y lo repetido
+   lo para el inbox. En memoria hay un tramo cada vez (más lo que haya en el solape).
+5. Procesa cada tramo del más antiguo al más nuevo (una racha se detecta en el orden en que pasó):
    cada evento entra por el inbox con `message_id` = huella SHA-256 de sus campos (`time`, `type`,
    `realmId`, `clientId`, `userId`, `sessionId`, `ipAddress`, `error`, `details`), así que el
-   solape no repite nada. Un evento envenenado queda `FAILED` en el inbox con su JSON y no bloquea
-   la marca.
-4. Suelta el arrendamiento avanzando la marca al `time` más nuevo visto (nunca hacia atrás) y, si
-   falló, guarda el error sin mover la marca; más de diez intervalos sin una pasada buena registran
+   solape no repite nada. La marca sube con cada evento atendido: es siempre un prefijo ya
+   procesado, y como lo que se relee incluye el milisegundo de la marca, los eventos que lo
+   comparten ni se pierden ni se duplican.
+6. Keycloak ordena solo por `time`: dos eventos del mismo milisegundo pueden salir en otro orden en
+   la consulta de la página siguiente, y uno no saldría en ninguna de las dos. Cuando la frontera
+   entre dos páginas cae dentro de un milisegundo, ese milisegundo se vuelve a pedir entero en una
+   sola respuesta.
+7. Suelta el arrendamiento con la marca en lo procesado (nunca hacia atrás) y, si la pasada falló,
+   guarda el error; más de diez intervalos sin una pasada buena registran
    `system.source.stalled`, una vez por fuente y hora. Se cuentan desde la última pasada buena o
    desde que esta instancia empezó a leer la fuente, lo que sea más reciente: al primer arranque de un
    stack el lector pregunta antes de que `apply-partials.sh` cree `mto-notification-svc`, y eso no es
    una fuente parada mientras no dure los diez intervalos.
+
+### Un evento que falla
+
+| Qué pasa | Qué hace el lector | La marca |
+|---|---|---|
+| El adaptador no entiende el evento, o la ingesta lanza (un evento envenenado, o un fallo pasajero de la base) | Lo deja `FAILED` en el inbox con su JSON y su motivo y sigue con los demás | Pasa: el evento ya está guardado y lo lleva el reintento |
+| Keycloak deja de responder a mitad (la lista, o el cliente por el que pregunta el adaptador de administración) | Para la pasada con el error; ningún evento queda `FAILED` | Se queda en el último procesado; la pasada siguiente lo relee |
+| Ni siquiera se puede apuntar el fallo (la base no responde) | Para la pasada con el error | Se queda antes de ese evento |
+
+Un `FAILED` de Keycloak se reintenta **desde el JSON del inbox**, sin volver a pedirlo a Keycloak (que
+lo caduca a los 7 días) y sin depender de la marca: al empezar cada pasada, con el arrendamiento, se
+vuelven a aplicar los que ya esperaron (`retry.backoff`, 1 min tras el primer fallo y el doble tras
+cada uno, hasta `retry.max-backoff`), hasta `retry.batch-size` por pasada. Con `retry.max-attempts`
+(5) fallos queda `FAILED` para siempre: se ve en `GET /admin/sources`, cuenta en la métrica y se purga
+a los 30 días (`app.notification.retention.inbox-failed`), como los `FAILED` de RabbitMQ, cuyo mensaje
+está en su DLQ. Releerlo por el solape no cuenta como intento: un `FAILED` solo lo toca el reintento.
+
+`mto_notification_keycloak_events_total{source, result}` (Prometheus) cuenta por fuente los eventos
+`ingested`, los `failed` (un fallo que se va a reintentar), los `recovered` (un reintento que entró) y
+los `terminal` (agotó sus intentos): un `terminal` que sube es un evento que no va a entrar solo.
 
 Todo el HTTP corre fuera de transacción, con la cuenta de servicio `mto-notification-svc`
 (`client_credentials`, `view-events`) y el circuito `keycloak`.

@@ -22,7 +22,22 @@ public interface SourceCursorRepository extends JpaRepository<SourceCursor, Sour
             """, nativeQuery = true)
     int acquireLease(@Param("kind") String kind, @Param("owner") String owner, @Param("until") Instant until);
 
-    /** Suelta el arrendamiento y, si la pasada fue bien, avanza la marca (nunca hacia atras). */
+    /**
+     * A mitad de una pasada larga: renueva el arrendamiento y avanza la marca hasta donde llego
+     * (nunca hacia atras). 0 si el arrendamiento ya no es de esta instancia: caduco y otra lo tomo.
+     */
+    @Modifying
+    @Query(value = """
+            update source_cursor
+               set lease_until = :until,
+                   last_event_time = greatest(coalesce(last_event_time, :lastEventTime), coalesce(:lastEventTime, last_event_time)),
+                   updated_at = now()
+             where kind = :kind and lease_owner = :owner
+            """, nativeQuery = true)
+    int renewLease(@Param("kind") String kind, @Param("owner") String owner,
+                   @Param("lastEventTime") Instant lastEventTime, @Param("until") Instant until);
+
+    /** Suelta el arrendamiento y avanza la marca hasta lo procesado (nunca hacia atras); sin error, la pasada cuenta como buena. */
     @Modifying
     @Query(value = """
             update source_cursor

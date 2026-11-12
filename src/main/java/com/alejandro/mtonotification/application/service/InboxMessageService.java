@@ -1,7 +1,13 @@
 package com.alejandro.mtonotification.application.service;
 
+import com.alejandro.mtonotification.application.dto.messaging.FailedInboxMessage;
 import com.alejandro.mtonotification.application.dto.messaging.InboxMessageCommand;
 import com.alejandro.mtonotification.application.dto.messaging.InboxProcessingResult;
+
+import java.time.Duration;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Ejecuta un trabajo como mucho una vez por mensaje, llegue como llegue (RabbitMQ o un sondeo).
@@ -21,4 +27,13 @@ public interface InboxMessageService {
      * {@link #process} haya terminado, nunca desde dentro.
      */
     void recordFailure(InboxMessageCommand command, Throwable failure);
+
+    /** De {@code messageIds}, los que estan FAILED en el inbox de esa fuente. */
+    Set<String> failedAmong(String sourceService, Collection<String> messageIds);
+
+    /**
+     * Los FAILED de una fuente a los que les toca otro intento: menos de {@code maxAttempts} fallos y
+     * pasada su espera ({@code backoff} tras el primero, el doble tras cada uno, hasta {@code maxBackoff}).
+     */
+    List<FailedInboxMessage> failedDueForRetry(String sourceService, int maxAttempts, Duration backoff, Duration maxBackoff, int batchSize);
 }

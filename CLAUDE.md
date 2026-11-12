@@ -170,6 +170,20 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
 - **Todo el HTTP hacia Keycloak corre fuera de transacción** (el lector: arrendamiento → HTTP →
   una transacción por evento → avance de la marca; el despachador: reclamar → resolver → enviar →
   marcar). Keycloak caído solo retrasa el correo y deja la marca donde estaba.
+- **El lector de Keycloak no se salta ningún evento, haya los que haya** (`KeycloakEventsPollerImpl`,
+  `docs/06-messaging.md`). La Admin API solo pagina del más nuevo al más antiguo (ni orden
+  ascendente ni fecha con hora: `KeycloakEventsIT` lo comprueba), así que lo que no cabe en un tramo
+  (`page-size` × `max-pages-per-poll`) **no se procesa empezando por arriba**: se busca la marca por
+  bisección y se lee por tramos desde el más antiguo. La marca solo sube sobre un prefijo ya
+  procesado, y lo que se relee incluye su milisegundo. Una frontera de página dentro de un
+  milisegundo se vuelve a pedir entera (Keycloak ordena solo por `time`). Una pasada larga renueva su
+  arrendamiento (`SourceCursorService.advance`) y para si ya no es suyo.
+- **Un evento de Keycloak que falla no para a los demás ni se pierde**: queda `FAILED` en el inbox con
+  su JSON y su motivo, la marca pasa, y se reintenta **desde el inbox** con espera doblada y un tope
+  de intentos (`app.keycloak.events.retry.*`); una relectura por el solape no lo toca. Solo paran la
+  pasada, con la marca antes del evento, Keycloak caído (`DirectoryUnavailableException`) y no poder
+  ni apuntar el fallo (la base caída). Los `FAILED` se purgan con su retención
+  (`retention.inbox-failed`) y se cuentan en `mto_notification_keycloak_events_total{result}`.
 - **Lo que corre solo se apaga en los tests** (`application-test.yml`: lector, despachador, cierre
   de ráfagas, purga, correo) y cada test enciende lo que prueba llamándolo. `MtoNotificationApplicationTests`
   y `KeycloakEventsIT` ponen esas properties a mano porque corren con el perfil por defecto.
@@ -193,7 +207,7 @@ y los ejemplos de cada productor, consumidor, inbox, firma y topología de las s
 (controladores sonda), `ApiDocsExposureTest`, `CorrelationIdFilterTest`,
 `OpenApiDocumentationConfigurationTest`; contra PostgreSQL, `InboxMessageRepositoryDataJpaTest`,
 `ActivityRegistryDataJpaTest` (idempotencia, `CHECK`s, rachas, la fusión del evento de Keycloak con
-el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera y la de un trabajo que pasa de los diez minutos sin partirse, frenos, arrendamiento, purga, las líneas de campo y de recursos guardadas, consultadas y purgadas con su categoría, y cada enumerado de Java con los valores de su tipo de PostgreSQL) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
+el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera y la de un trabajo que pasa de los diez minutos sin partirse, frenos, arrendamiento y su renovación, los fallidos del inbox a los que les toca reintento, purga (también la de los `FAILED`), las líneas de campo y de recursos guardadas, consultadas y purgadas con su categoría, y cada enumerado de Java con los valores de su tipo de PostgreSQL) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
 entregas), los tres `@DataJpaTest` que recogen los servicios package-private con una
 `@TestConfiguration` anidada y `@ComponentScan` por nombre; `MtoNotificationApplicationTests`
 (contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean;
