@@ -4,6 +4,8 @@ import com.alejandro.mtonotification.application.service.ActivityIngestor;
 import com.alejandro.mtonotification.application.service.ActivityQueryService;
 import com.alejandro.mtonotification.application.service.ActivitySourceAdapter;
 import com.alejandro.mtonotification.application.service.AdminService;
+import com.alejandro.mtonotification.application.service.DeadLetterAdminService;
+import com.alejandro.mtonotification.application.service.DeadLetterQueues;
 import com.alejandro.mtonotification.application.service.AudienceResolver;
 import com.alejandro.mtonotification.application.service.BurstAggregator;
 import com.alejandro.mtonotification.application.service.DeliveryChannel;
@@ -246,6 +248,7 @@ class MtoNotificationApplicationTests extends PostgreSQLTestContainer {
         for (Class<?> service : List.of(DeliveryDispatcher.class, DeliveryRelayService.class, DeliveryDispatchTrigger.class,
                 AudienceResolver.class, KeycloakEventsPoller.class, KeycloakEventsClient.class, KeycloakDirectoryClient.class,
                 SourceCursorService.class, InboxQueryService.class, ActivityQueryService.class, AdminService.class,
+                DeadLetterAdminService.class,
                 RetentionPurge.class, InboxController.class, ActivityController.class, AccessController.class, AdminController.class)) {
             assertNotNull(context.getBean(service), service.getSimpleName());
         }
@@ -264,5 +267,8 @@ class MtoNotificationApplicationTests extends PostgreSQLTestContainer {
         assertEquals(0, context.getBeanNamesForType(FieldSourceConsumer.class).length);
         assertEquals(0, context.getBeanNamesForType(ResourcesSourceConsumer.class).length);
         assertEquals(0, context.getBeanNamesForType(KeycloakPollingConfiguration.class).length, "sin sondeo planificado");
+        assertEquals(0, context.getBeanNamesForType(DeadLetterQueues.class).length, "sin broker no hay DLQ");
+        assertFalse(context.getBean(DeadLetterAdminService.class).queues().enabled(), "y la administracion lo dice en vez de fallar");
+        assertTrue(context.getBean(DeadLetterAdminService.class).queues().queues().isEmpty());
     }
 }

@@ -28,7 +28,17 @@ import com.alejandro.mtonotification.application.exception.NotFoundException;
 import com.alejandro.mtonotification.application.exception.UnprocessableException;
 import com.alejandro.mtonotification.application.exception.ValidationException;
 import com.alejandro.mtonotification.application.service.ActivityQueryService;
+import com.alejandro.mtonotification.application.dto.admin.DeadLetterPeekResponse;
+import com.alejandro.mtonotification.application.dto.admin.DeadLetterQueuesResponse;
+import com.alejandro.mtonotification.application.dto.admin.DeadLetterReprocessResponse;
+import com.alejandro.mtonotification.application.dto.deadletter.DeadLetter;
+import com.alejandro.mtonotification.application.dto.deadletter.DeadLetterQueueDepth;
+import com.alejandro.mtonotification.application.dto.deadletter.DeadLetterReprocessing;
+import com.alejandro.mtonotification.application.dto.deadletter.ReprocessedDeadLetter;
+import com.alejandro.mtonotification.application.exception.BrokerUnavailableException;
+import com.alejandro.mtonotification.application.exception.ValidationException;
 import com.alejandro.mtonotification.application.service.AdminService;
+import com.alejandro.mtonotification.application.service.DeadLetterAdminService;
 import com.alejandro.mtonotification.application.service.InboxQueryService;
 import com.alejandro.mtonotification.configuration.security.RestAccessDeniedHandler;
 import com.alejandro.mtonotification.configuration.security.RestAuthenticationEntryPoint;
@@ -113,6 +123,9 @@ class RestControllerLayerTest {
 
     @MockitoBean
     private AdminService adminService;
+
+    @MockitoBean
+    private DeadLetterAdminService deadLetterAdminService;
 
     // --- bandeja ---
 
@@ -376,7 +389,86 @@ class RestControllerLayerTest {
     }
 
     @Test
+    void theDeadLetterQueuesAreCountedPeekedAndReprocessedBySource() throws Exception {
+        String dlq = "mto.notification.maintenance.queue.dlq";
+        when(deadLetterAdminService.queues()).thenReturn(new DeadLetterQueuesResponse(true, List.of(
+                new DeadLetterQueueDepth("maintenance", "mto.notification.maintenance.queue", dlq, 2L),
+                new DeadLetterQueueDepth("stock", "mto.notification.stock.queue", "mto.notification.stock.queue.dlq", null))));
+        when(deadLetterAdminService.peek("maintenance", 5)).thenReturn(new DeadLetterPeekResponse("maintenance", dlq, 2, List.of(
+                new DeadLetterPeekResponse.PeekedDeadLetter(
+                        new DeadLetter("op-1", "mto-maintenance", "MAINTENANCE_ORDER_CREATED", "order", "42", "mto.maintenance.exchange",
+                                "mto.maintenance.order.created", "rejected", 1L, CREATED_AT, 512, null),
+                        new DeadLetterPeekResponse.InboxRecord(InboxMessageStatus.FAILED, 4, CREATED_AT, "boom")),
+                new DeadLetterPeekResponse.PeekedDeadLetter(
+                        new DeadLetter("op-2", "mto-maintenance", "MAINTENANCE_ORDER_CREATED", "order", "43", "mto.maintenance.exchange",
+                                "mto.maintenance.order.created", "rejected", 1L, CREATED_AT, 512, "it would be rejected because its signature does not match"),
+                        null))));
+        when(deadLetterAdminService.reprocess("maintenance", null)).thenReturn(new DeadLetterReprocessResponse("maintenance", dlq, 20, 2, 1, 0, 1, 1L,
+                DeadLetterReprocessing.StoppedBy.EMPTY, List.of(
+                new ReprocessedDeadLetter("op-1", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessedDeadLetter.Outcome.PROCESSED, null),
+                new ReprocessedDeadLetter("op-2", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessedDeadLetter.Outcome.FAILED, "still broken"))));
+
+        mockMvc.perform(get(ADMIN + "/dead-letters").with(role(SecurityRoles.NOTIFICATION_ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.queues[0].source").value("maintenance"))
+                .andExpect(jsonPath("$.queues[0].deadLetterQueue").value(dlq))
+                .andExpect(jsonPath("$.queues[0].messages").value(2))
+                .andExpect(jsonPath("$.queues[1].messages").doesNotExist());
+        mockMvc.perform(get(ADMIN + "/dead-letters/maintenance").param("max", "5").with(role(SecurityRoles.NOTIFICATION_ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.messages").value(2))
+                .andExpect(jsonPath("$.peeked[0].message.messageId").value("op-1"))
+                .andExpect(jsonPath("$.peeked[0].message.routingKey").value("mto.maintenance.order.created"))
+                .andExpect(jsonPath("$.peeked[0].message.deathReason").value("rejected"))
+                .andExpect(jsonPath("$.peeked[0].inbox.status").value("FAILED"))
+                .andExpect(jsonPath("$.peeked[0].inbox.attempts").value(4))
+                .andExpect(jsonPath("$.peeked[1].inbox").doesNotExist())
+                .andExpect(jsonPath("$.peeked[1].message.problem").value("it would be rejected because its signature does not match"));
+        mockMvc.perform(post(ADMIN + "/dead-letters/maintenance/reprocess").with(role(SecurityRoles.NOTIFICATION_ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requested").value(20))
+                .andExpect(jsonPath("$.fetched").value(2))
+                .andExpect(jsonPath("$.processed").value(1))
+                .andExpect(jsonPath("$.failed").value(1))
+                .andExpect(jsonPath("$.remaining").value(1))
+                .andExpect(jsonPath("$.stoppedBy").value("EMPTY"))
+                .andExpect(jsonPath("$.results[1].outcome").value("FAILED"))
+                .andExpect(jsonPath("$.results[1].reason").value("still broken"));
+    }
+
+    @Test
+    void theDeadLetterErrorsCarryTheirSourceCodes() throws Exception {
+        when(deadLetterAdminService.peek(eq("warehouse"), any())).thenThrow(NotFoundException.of("Source", "There is no RabbitMQ source 'warehouse'"));
+        when(deadLetterAdminService.reprocess(eq("stock"), any())).thenThrow(new ConflictException("Source", "RabbitMQ is switched off"));
+        when(deadLetterAdminService.reprocess(eq("users"), any())).thenThrow(new BrokerUnavailableException("RabbitMQ is not answering", null));
+        when(deadLetterAdminService.reprocess("field", 500)).thenThrow(new ValidationException("max must be between 1 and 100, was 500"));
+
+        mockMvc.perform(get(ADMIN + "/dead-letters/warehouse").with(role(SecurityRoles.NOTIFICATION_ADMIN)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("SRC-404"));
+        mockMvc.perform(post(ADMIN + "/dead-letters/stock/reprocess").with(role(SecurityRoles.NOTIFICATION_ADMIN)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("SRC-409"));
+        mockMvc.perform(post(ADMIN + "/dead-letters/users/reprocess").with(role(SecurityRoles.NOTIFICATION_ADMIN)))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.errorCode").value("SRC-503"));
+        mockMvc.perform(post(ADMIN + "/dead-letters/field/reprocess").param("max", "500").with(role(SecurityRoles.NOTIFICATION_ADMIN)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VAL-001"));
+        mockMvc.perform(post(ADMIN + "/dead-letters/field/reprocess").param("max", "muchos").with(role(SecurityRoles.NOTIFICATION_ADMIN)))
+                .andExpect(status().isBadRequest());
+        // Reprocesar es un POST: un GET a esa ruta no reprocesa nada.
+        mockMvc.perform(get(ADMIN + "/dead-letters/field/reprocess").with(role(SecurityRoles.NOTIFICATION_ADMIN)))
+                .andExpect(status().isMethodNotAllowed());
+    }
+
+    @Test
     void theRealControllersSitBehindTheirPermissions() throws Exception {
+        mockMvc.perform(get(ADMIN + "/dead-letters").with(role(SecurityRoles.NOTIFICATION_ACTIVITY_READ))).andExpect(status().isForbidden());
+        mockMvc.perform(get(ADMIN + "/dead-letters/stock").with(role(SecurityRoles.NOTIFICATION_INBOX))).andExpect(status().isForbidden());
+        mockMvc.perform(post(ADMIN + "/dead-letters/stock/reprocess").with(role(SecurityRoles.NOTIFICATION_ACTIVITY_READ))).andExpect(status().isForbidden());
+        mockMvc.perform(post(ADMIN + "/dead-letters/stock/reprocess")).andExpect(status().isUnauthorized());
         mockMvc.perform(get(INBOX).with(role(SecurityRoles.NOTIFICATION_ADMIN))).andExpect(status().isForbidden());
         mockMvc.perform(get(ACTIVITY).with(role(SecurityRoles.NOTIFICATION_INBOX))).andExpect(status().isForbidden());
         mockMvc.perform(get(ACCESS).with(role(SecurityRoles.NOTIFICATION_ACTIVITY_READ))).andExpect(status().isForbidden());

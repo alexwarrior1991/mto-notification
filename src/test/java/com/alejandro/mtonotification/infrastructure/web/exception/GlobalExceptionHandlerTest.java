@@ -3,6 +3,7 @@ package com.alejandro.mtonotification.infrastructure.web.exception;
 import com.alejandro.mtonotification.application.dto.error.ApiErrorResponse;
 import com.alejandro.mtonotification.application.dto.error.ValidationError;
 import com.alejandro.mtonotification.application.exception.BusinessException;
+import com.alejandro.mtonotification.application.exception.BrokerUnavailableException;
 import com.alejandro.mtonotification.application.exception.ConflictException;
 import com.alejandro.mtonotification.application.exception.DirectoryUnavailableException;
 import com.alejandro.mtonotification.application.exception.InvalidSortException;
@@ -162,6 +163,11 @@ class GlobalExceptionHandlerTest {
                 HttpStatus.UNPROCESSABLE_CONTENT));
         assertEquals("NTF-503", codeOf(handler.handleDirectoryUnavailable(new DirectoryUnavailableException("Keycloak is down"), request),
                 HttpStatus.SERVICE_UNAVAILABLE));
+        assertEquals("SRC-503", codeOf(handler.handleBrokerUnavailable(new BrokerUnavailableException("RabbitMQ is down", null), request),
+                HttpStatus.SERVICE_UNAVAILABLE));
+        assertEquals("SRC-404", codeOf(handler.handleNotFound(NotFoundException.of("Source", "There is no RabbitMQ source 'x'"), request),
+                HttpStatus.NOT_FOUND));
+        assertEquals("SRC-409", codeOf(handler.handleConflict(new ConflictException("Source", "RabbitMQ is switched off"), request), HttpStatus.CONFLICT));
         assertEquals("SRC-422", codeOf(handler.handleBusiness(new UnprocessableSourceEventException("no entity name"), request),
                 HttpStatus.UNPROCESSABLE_CONTENT));
 

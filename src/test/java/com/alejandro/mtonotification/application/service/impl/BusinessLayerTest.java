@@ -6,6 +6,13 @@ import com.alejandro.mtonotification.application.dto.keycloak.KeycloakClient;
 import com.alejandro.mtonotification.application.dto.keycloak.KeycloakEvent;
 import com.alejandro.mtonotification.application.dto.keycloak.KeycloakRole;
 import com.alejandro.mtonotification.application.dto.keycloak.KeycloakUser;
+import com.alejandro.mtonotification.application.dto.admin.DeadLetterPeekResponse;
+import com.alejandro.mtonotification.application.dto.admin.DeadLetterQueuesResponse;
+import com.alejandro.mtonotification.application.dto.admin.DeadLetterReprocessResponse;
+import com.alejandro.mtonotification.application.dto.deadletter.DeadLetter;
+import com.alejandro.mtonotification.application.dto.deadletter.DeadLetterQueueDepth;
+import com.alejandro.mtonotification.application.dto.deadletter.DeadLetterReprocessing;
+import com.alejandro.mtonotification.application.dto.deadletter.ReprocessedDeadLetter;
 import com.alejandro.mtonotification.application.dto.messaging.FailedInboxMessage;
 import com.alejandro.mtonotification.application.dto.messaging.InboxMessageCommand;
 import com.alejandro.mtonotification.application.dto.messaging.InboxProcessingResult;
@@ -14,7 +21,14 @@ import com.alejandro.mtonotification.application.dto.messaging.SourceEnvelope;
 import com.alejandro.mtonotification.application.dto.messaging.SourceEventContext;
 import com.alejandro.mtonotification.application.exception.DirectoryUnavailableException;
 import com.alejandro.mtonotification.application.exception.UnprocessableSourceEventException;
+import com.alejandro.mtonotification.application.exception.ConflictException;
 import com.alejandro.mtonotification.application.exception.ValidationException;
+import com.alejandro.mtonotification.application.service.DeadLetterQueues;
+import com.alejandro.mtonotification.configuration.security.CurrentUserService;
+import com.alejandro.mtonotification.infrastructure.persistence.entity.InboxMessage;
+import com.alejandro.mtonotification.infrastructure.persistence.entity.InboxMessageStatus;
+import com.alejandro.mtonotification.infrastructure.persistence.repository.InboxMessageRepository;
+import org.springframework.beans.factory.ObjectProvider;
 import com.alejandro.mtonotification.application.service.ActivityIngestor;
 import com.alejandro.mtonotification.application.service.AudienceResolver;
 import com.alejandro.mtonotification.application.service.BurstAggregator;
@@ -2592,6 +2606,104 @@ class BusinessLayerTest {
                 assertEquals("ipAddress must be an IPv4 or IPv6 literal", rejected.getMessage());
                 assertFalse(RecordingInetAddressResolverProvider.lookedUp(notALiteral), notALiteral + " no se resuelve");
             }
+        }
+    }
+    /** Las DLQ para quien administra: los limites de una pasada, lo que cuenta de ella y el broker apagado. */
+    @Nested
+    class DeadLetters {
+
+        private final DeadLetterQueues queues = mock(DeadLetterQueues.class);
+        private final InboxMessageRepository inbox = mock(InboxMessageRepository.class);
+        private final CurrentUserService currentUser = mock(CurrentUserService.class);
+        private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        private static final Instant NOW = Instant.parse("2026-11-12T22:15:00Z");
+        private final DeadLetterQueueDepth depth = new DeadLetterQueueDepth("maintenance", "mto.notification.maintenance.queue",
+                "mto.notification.maintenance.queue.dlq", 3L);
+
+        private DeadLetterAdminServiceImpl service(DeadLetterQueues available) {
+            @SuppressWarnings("unchecked") ObjectProvider<DeadLetterQueues> provider = mock(ObjectProvider.class);
+            when(provider.getIfAvailable()).thenReturn(available);
+            when(currentUser.getUsername()).thenReturn(Optional.of("ops.admin"));
+            return new DeadLetterAdminServiceImpl(provider, inbox, currentUser, meters);
+        }
+
+        @Test
+        void withTheBrokerSwitchedOffTheQueuesSaySoAndNothingIsReadFromThem() {
+            DeadLetterAdminServiceImpl off = service(null);
+
+            assertEquals(new DeadLetterQueuesResponse(false, List.of()), off.queues(), "apagado no es un fallo: se dice");
+            ConflictException peek = assertThrows(ConflictException.class, () -> off.peek("maintenance", null));
+            assertEquals("Source", peek.getAggregate(), "409 SRC-409");
+            assertTrue(peek.getMessage().contains("app.rabbitmq.enabled=false"), peek.getMessage());
+            assertThrows(ConflictException.class, () -> off.reprocess("maintenance", 5));
+
+            when(queues.depths()).thenReturn(List.of(depth));
+            assertEquals(new DeadLetterQueuesResponse(true, List.of(depth)), service(queues).queues());
+        }
+
+        @Test
+        void aPeekSaysWhatTheInboxKnowsOfEveryMessageAndABatchIsBounded() {
+            DeadLetter failedInInbox = deadLetter("op-1", "mto-maintenance", null);
+            DeadLetter neverRecorded = deadLetter("op-2", "mto-maintenance", "it would be rejected because its signature does not match");
+            DeadLetter withoutIdentifier = deadLetter(null, null, "no identifier");
+            when(queues.depth("maintenance")).thenReturn(depth);
+            when(queues.peek("maintenance", DeadLetterAdminServiceImpl.DEFAULT_BATCH)).thenReturn(List.of(failedInInbox, neverRecorded, withoutIdentifier));
+            InboxMessage row = mock(InboxMessage.class);
+            when(row.getStatus()).thenReturn(InboxMessageStatus.FAILED);
+            when(row.getProcessingAttempts()).thenReturn(4);
+            when(row.getFailedAt()).thenReturn(NOW);
+            when(row.getFailureReason()).thenReturn("java.lang.IllegalStateException: boom");
+            when(inbox.findByMessageIdAndSourceService("op-1", "mto-maintenance")).thenReturn(Optional.of(row));
+            when(inbox.findByMessageIdAndSourceService("op-2", "mto-maintenance")).thenReturn(Optional.empty());
+
+            DeadLetterPeekResponse peek = service(queues).peek("maintenance", null);
+
+            assertEquals("maintenance", peek.source());
+            assertEquals("mto.notification.maintenance.queue.dlq", peek.deadLetterQueue());
+            assertEquals(3, peek.messages());
+            assertEquals(new DeadLetterPeekResponse.InboxRecord(InboxMessageStatus.FAILED, 4, NOW, "java.lang.IllegalStateException: boom"),
+                    peek.peeked().get(0).inbox(), "el adaptador fallo: el motivo esta en el inbox");
+            assertNull(peek.peeked().get(1).inbox(), "lo paro la firma: nunca llego al inbox");
+            assertNull(peek.peeked().get(2).inbox());
+            assertEquals(failedInInbox, peek.peeked().get(0).message());
+
+            DeadLetterAdminServiceImpl service = service(queues);
+            for (Integer outOfRange : List.of(0, -1, DeadLetterAdminServiceImpl.MAX_BATCH + 1)) {
+                assertThrows(ValidationException.class, () -> service.peek("maintenance", outOfRange), "max=" + outOfRange);
+                assertThrows(ValidationException.class, () -> service.reprocess("maintenance", outOfRange), "max=" + outOfRange);
+            }
+            verify(queues, never()).reprocess(any(), anyInt(), any());
+        }
+
+        @Test
+        void aReprocessCountsWhatHappenedToEveryMessageAndWhatIsLeft() {
+            when(queues.reprocess("maintenance", 5, DeadLetterAdminServiceImpl.TIME_BUDGET)).thenReturn(new DeadLetterReprocessing(List.of(
+                    new ReprocessedDeadLetter("op-1", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessedDeadLetter.Outcome.PROCESSED, null),
+                    new ReprocessedDeadLetter("op-2", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessedDeadLetter.Outcome.FAILED, "still broken"),
+                    new ReprocessedDeadLetter("op-3", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessedDeadLetter.Outcome.DUPLICATE, null),
+                    new ReprocessedDeadLetter("op-4", "MAINTENANCE_ORDER_CREATED", "mto.maintenance.order.created", ReprocessedDeadLetter.Outcome.PROCESSED, null)),
+                    DeadLetterReprocessing.StoppedBy.EMPTY));
+            when(queues.depth("maintenance")).thenReturn(new DeadLetterQueueDepth("maintenance", "mto.notification.maintenance.queue",
+                    "mto.notification.maintenance.queue.dlq", 1L));
+
+            DeadLetterReprocessResponse response = service(queues).reprocess("maintenance", 5);
+
+            assertEquals(5, response.requested());
+            assertEquals(4, response.fetched());
+            assertEquals(2, response.processed());
+            assertEquals(1, response.duplicates());
+            assertEquals(1, response.failed());
+            assertEquals(1L, response.remaining(), "el que volvio a fallar sigue en la DLQ");
+            assertEquals(DeadLetterReprocessing.StoppedBy.EMPTY, response.stoppedBy());
+            assertEquals("still broken", response.results().get(1).reason());
+            assertEquals(2.0, meters.counter(DeadLetterAdminServiceImpl.REPROCESSED_METER, "source", "maintenance", "result", "processed").count());
+            assertEquals(1.0, meters.counter(DeadLetterAdminServiceImpl.REPROCESSED_METER, "source", "maintenance", "result", "duplicate").count());
+            assertEquals(1.0, meters.counter(DeadLetterAdminServiceImpl.REPROCESSED_METER, "source", "maintenance", "result", "failed").count());
+        }
+
+        private DeadLetter deadLetter(String messageId, String sourceService, String problem) {
+            return new DeadLetter(messageId, sourceService, "MAINTENANCE_ORDER_CREATED", "order", "42", "mto.maintenance.exchange",
+                    "mto.maintenance.order.created", "rejected", 1L, NOW, 512, problem);
         }
     }
 }

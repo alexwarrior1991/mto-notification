@@ -1,6 +1,9 @@
 package com.alejandro.mtonotification.infrastructure.web.controller;
 
 import com.alejandro.mtonotification.application.dto.admin.BroadcastRequest;
+import com.alejandro.mtonotification.application.dto.admin.DeadLetterPeekResponse;
+import com.alejandro.mtonotification.application.dto.admin.DeadLetterQueuesResponse;
+import com.alejandro.mtonotification.application.dto.admin.DeadLetterReprocessResponse;
 import com.alejandro.mtonotification.application.dto.admin.RulesResponse;
 import com.alejandro.mtonotification.application.dto.admin.SourceStatusResponse;
 import com.alejandro.mtonotification.application.dto.admin.TestEmailRequest;
@@ -9,6 +12,7 @@ import com.alejandro.mtonotification.application.dto.delivery.DeliveryFilter;
 import com.alejandro.mtonotification.application.dto.delivery.DeliveryResponse;
 import com.alejandro.mtonotification.application.dto.notification.NotificationResponse;
 import com.alejandro.mtonotification.application.service.AdminService;
+import com.alejandro.mtonotification.application.service.DeadLetterAdminService;
 import com.alejandro.mtonotification.infrastructure.persistence.entity.DeliveryStatus;
 import com.alejandro.mtonotification.infrastructure.web.NotificationApiPaths;
 import io.swagger.v3.oas.annotations.Operation;
@@ -36,10 +40,11 @@ import java.util.UUID;
 @RestController
 @RequestMapping(NotificationApiPaths.BASE + NotificationApiPaths.ADMIN)
 @RequiredArgsConstructor
-@Tag(name = "Administration", description = "Loaded rules, deliveries and retries, source status, test email and manual broadcasts")
+@Tag(name = "Administration", description = "Loaded rules, deliveries and retries, source status, dead letter queues, test email and manual broadcasts")
 public class AdminController {
 
     private final AdminService adminService;
+    private final DeadLetterAdminService deadLetterAdminService;
 
     @GetMapping("/rules")
     @Operation(summary = "The loaded rules and where they came from")
@@ -67,6 +72,29 @@ public class AdminController {
     @Operation(summary = "State of the sources", description = "Watermarks and leases of the Keycloak reader, inbox counts per source, open bursts and deliveries per status.")
     public SourceStatusResponse sources() {
         return adminService.sources();
+    }
+
+    @GetMapping("/dead-letters")
+    @Operation(summary = "How many messages the dead letter queue of every source holds",
+            description = "enabled=false and no queues when RabbitMQ is switched off; 503 SRC-503 when the broker does not answer.")
+    public DeadLetterQueuesResponse deadLetterQueues() {
+        return deadLetterAdminService.queues();
+    }
+
+    @GetMapping("/dead-letters/{source}")
+    @Operation(summary = "Peek at the first messages of the dead letter queue of a source",
+            description = "The messages stay in the queue. max between 1 and 100 (20). 404 SRC-404 for an unknown source; 409 SRC-409 "
+                    + "when RabbitMQ is switched off or the queue does not exist; 503 SRC-503 when the broker does not answer.")
+    public DeadLetterPeekResponse peekDeadLetters(@PathVariable String source, @RequestParam(required = false) Integer max) {
+        return deadLetterAdminService.peek(source, max);
+    }
+
+    @PostMapping("/dead-letters/{source}/reprocess")
+    @Operation(summary = "Run the first messages of the dead letter queue of a source through its consumer again",
+            description = "Each message once: applied or already applied, it leaves the queue; failing again, it stays. max between 1 "
+                    + "and 100 (20). Same errors as peeking.")
+    public DeadLetterReprocessResponse reprocessDeadLetters(@PathVariable String source, @RequestParam(required = false) Integer max) {
+        return deadLetterAdminService.reprocess(source, max);
     }
 
     @PostMapping("/test-email")

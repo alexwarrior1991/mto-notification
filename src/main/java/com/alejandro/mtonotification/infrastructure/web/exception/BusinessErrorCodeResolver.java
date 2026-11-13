@@ -1,5 +1,6 @@
 package com.alejandro.mtonotification.infrastructure.web.exception;
 
+import com.alejandro.mtonotification.application.exception.BrokerUnavailableException;
 import com.alejandro.mtonotification.application.exception.BusinessException;
 import com.alejandro.mtonotification.application.exception.ConflictException;
 import com.alejandro.mtonotification.application.exception.DirectoryUnavailableException;
@@ -34,6 +35,7 @@ final class BusinessErrorCodeResolver {
             case ConflictException conflict -> aggregateCode(conflict.getAggregate(), "409", "APP-409");
             case UnprocessableException unprocessable -> aggregateCode(unprocessable.getAggregate(), "422", "APP-422");
             case DirectoryUnavailableException ignored -> "NTF-503";
+            case BrokerUnavailableException ignored -> "SRC-503";
             case UnprocessableSourceEventException ignored -> "SRC-422";
             case ValidationException ignored -> "VAL-001";
             default -> "BUS-001";
