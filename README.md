@@ -146,6 +146,24 @@ frenos por regla y la marca del lector. Detalle en [`docs/03-database.md`](docs/
 
 Todo en [`docs/06-messaging.md`](docs/06-messaging.md), reglas incluidas.
 
+### Las DLQ
+
+Lo que una fuente de RabbitMQ no pudo aplicar (una firma que no casa, un evento que el adaptador no
+entiende, un fallo que agotó sus reintentos) queda en la DLQ de su cola. Con `notification-admin`:
+
+```bash
+API=http://localhost:8086/api/v1/notifications/admin
+curl -s $API/dead-letters -H "Authorization: Bearer $TOKEN"                          # cuántos guarda cada DLQ
+curl -s "$API/dead-letters/maintenance?max=5" -H "Authorization: Bearer $TOKEN"      # los primeros, sin sacarlos
+curl -s -X POST "$API/dead-letters/maintenance/reprocess?max=20" -H "Authorization: Bearer $TOKEN"
+```
+
+Reprocesar pasa cada mensaje otra vez por el consumidor de su fuente, con su firma y su inbox: el
+que se aplica (o ya estaba aplicado) sale de la DLQ y el que vuelve a fallar se queda en ella, con su
+motivo en la respuesta. Una fuente por llamada, como mucho 100 mensajes y 10 s, y nada se repite
+solo. Lo primero es arreglar la causa (el secreto de la firma, el adaptador, la base) y después
+reprocesar; el detalle y lo que garantiza, en [`docs/06-messaging.md`](docs/06-messaging.md), *Las DLQ*.
+
 ## Las reglas
 
 `src/main/resources/notification-rules.yml`: `event` (tipo, lista o `maintenance.order.*`), `when`
@@ -154,7 +172,10 @@ Todo en [`docs/06-messaging.md`](docs/06-messaging.md), reglas incluidas.
 `title`/`body`/`link` (plantillas)
 y `throttle`. Se validan al arrancar: un tipo, una audiencia o un canal desconocidos impiden
 arrancar, que es como una errata no se descubre el día que el evento por fin llega.
-`GET /admin/rules` enseña las cargadas.
+`GET /admin/rules` enseña las cargadas. De los perfiles de puesto de `mto-platform` (`mto-position-*`),
+el jefe de mantenimiento (`mto-position-chief-maintenance`) recibe lo mismo que
+`mto-maintenance-manager`; los demás, lo que va a su usuario
+([`docs/06-messaging.md`](docs/06-messaging.md), *Las reglas de esta fase*).
 
 ## Seguridad
 
@@ -193,7 +214,8 @@ registro desde el IDE.
 
 `/actuator/health` y `/actuator/info` son públicos; `metrics` y `prometheus` piden `ops-metrics`.
 Las trazas van al colector OTLP de `mto-platform` (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`), incluida la
-que llega en las cabeceras de RabbitMQ.
+que llega en las cabeceras de RabbitMQ. `mto_notification_dead_letters_reprocessed_total{source, result}`
+cuenta lo que se reprocesa de las DLQ.
 
 ## Tests
 

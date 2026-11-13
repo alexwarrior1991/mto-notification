@@ -98,7 +98,8 @@ class RulesConfigurationTest {
         assertTrue(vehicleUnavailable.matcher().matches(ActivityTypes.RESOURCES_VEHICLE_DEACTIVATED), "retirar uno disponible es dejarlo sin disponibilidad");
 
         List<String> resourcesManagers = List.of("PROFILE:mto-resources-manager", "PROFILE:mto-resources-admin");
-        List<String> fleetManagers = List.of("PROFILE:mto-resources-manager", "PROFILE:mto-resources-admin", "PROFILE:mto-maintenance-manager");
+        List<String> fleetManagers = List.of("PROFILE:mto-resources-manager", "PROFILE:mto-resources-admin", "PROFILE:mto-maintenance-manager",
+                "PROFILE:mto-position-chief-maintenance");
         Map<String, String> expiries = Map.of(
                 "resources-qualification-expiring", ActivityTypes.RESOURCES_QUALIFICATION_EXPIRING,
                 "resources-qualification-expired", ActivityTypes.RESOURCES_QUALIFICATION_EXPIRED,
@@ -129,7 +130,8 @@ class RulesConfigurationTest {
         assertEquals(Duration.ofHours(24), belowMinimum.throttle().window(), "un material bajo minimo avisa una vez al dia");
         assertEquals(List.of("inbox", "email"), belowMinimum.channels());
         NotificationRule touched = repository.rules().stream().filter(rule -> rule.key().equals("stock-reservation-touched-by-someone-else")).findFirst().orElseThrow();
-        assertEquals(List.of("PROFILE:mto-maintenance-manager"), touched.audiences(), "la reserva de mantenimiento tocada por otro avisa a mantenimiento");
+        assertEquals(List.of("PROFILE:mto-maintenance-manager", "PROFILE:mto-position-chief-maintenance"), touched.audiences(),
+                "la reserva de mantenimiento tocada por otro avisa a mantenimiento");
         assertTrue(touched.matcher().matches(ActivityTypes.STOCK_RESERVATION_RELEASED));
         assertEquals(100, repository.variables().get("large-adjustment-threshold"));
         assertEquals("service-account-mto-maintenance-svc", repository.variables().get("maintenance-service-account"));
@@ -150,6 +152,39 @@ class RulesConfigurationTest {
         assertTrue(streak.matcher().matches(ActivityTypes.ACCESS_LOGIN_STREAK));
         assertEquals(List.of("inbox", "email"), streak.channels());
         assertEquals(Duration.ofMinutes(30), streak.throttle().window());
+    }
+
+    /**
+     * El jefe de mantenimiento (el perfil de puesto {@code mto-position-chief-maintenance}) recibe lo
+     * que los responsables de mantenimiento: su puesto es todo el mantenimiento, sin limite de EP, y
+     * quien lo ocupa no lleva por fuerza el perfil del servicio. Una regla nueva que nombre a uno y
+     * no al otro lo dejaria otra vez sin avisos.
+     */
+    @Test
+    void whatTheMaintenanceManagersReceiveTheChiefOfMaintenanceReceivesToo() {
+        YamlRuleRepository repository = new YamlRuleRepository(REAL_RULES, Map.of());
+        int rulesForMaintenance = 0;
+        for (NotificationRule rule : repository.rules()) {
+            long managers = rule.audiences().stream().filter(audience -> audience.contains("mto-maintenance-manager")).count();
+            long chiefs = rule.audiences().stream().filter(audience -> audience.contains("mto-position-chief-maintenance")).count();
+            assertEquals(managers, chiefs, rule.key() + ": " + rule.audiences());
+            for (String audience : rule.audiences()) {
+                if (audience.contains("mto-maintenance-manager")) {
+                    assertTrue(rule.audiences().contains(audience.replace("mto-maintenance-manager", "mto-position-chief-maintenance")),
+                            rule.key() + ": con la misma condicion que el responsable (" + audience + ")");
+                }
+            }
+            rulesForMaintenance += (int) managers;
+        }
+        assertEquals(29, rulesForMaintenance, "las reglas que avisan a mantenimiento");
+
+        NotificationRule urgent = repository.rules().stream().filter(rule -> rule.key().equals("maintenance-order-urgent")).findFirst().orElseThrow();
+        assertEquals(List.of("PROFILE:mto-maintenance-manager", "PROFILE:mto-position-chief-maintenance"), urgent.audiences());
+        // Solo se anade: nadie que recibia un aviso deja de recibirlo, y ningun otro puesto entra por perfil.
+        for (NotificationRule rule : repository.rules()) {
+            rule.audiences().stream().filter(audience -> audience.contains("mto-position-"))
+                    .forEach(audience -> assertTrue(audience.contains("mto-position-chief-maintenance"), rule.key() + ": " + audience));
+        }
     }
 
     @Test

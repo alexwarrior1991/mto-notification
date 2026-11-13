@@ -58,7 +58,8 @@ mismo id impiden arrancar). Idempotencia por `(message_id, source_service)` con 
 `inbox_message` que sus hermanos: `message_id` es el `operationId` del sobre (o el `message_id`
 AMQP) y, para un evento de Keycloak, su huella SHA-256. El adaptador corre dentro de la transacción
 del inbox; un fallo transitorio deja el mensaje `FAILED` con su motivo y lo devuelve al broker, uno
-permanente (`UnprocessableSourceEventException`) lo manda a la DLQ.
+permanente (`UnprocessableSourceEventException`) lo manda a la DLQ. Lo que hay en una DLQ se mira y
+se vuelve a procesar desde la administración ([*Las DLQ*](#las-dlq-mirar-y-reprocesar)).
 
 ### Datos maestros
 
@@ -230,6 +231,69 @@ con actor `PERSON` (la consola, `kcadm`) nunca se funde: es justo lo que la regl
 | `client-roles-added/removed` | `users.client-roles.added/removed` |
 | `realm-roles-added/removed` | `users.profile.assigned/removed` |
 
+## Las DLQ: mirar y reprocesar
+
+Qué acaba en la DLQ de una fuente, y qué sabe el inbox de ello:
+
+| Por qué | Cuándo va a la DLQ | En el inbox |
+|---|---|---|
+| La firma no casa (o no se puede comprobar con `REQUIRED`), el cuerpo no es el sobre, no trae `data` o no trae identificador | En la primera entrega, sin reintentos | Nada: no llegó a registrarse; el motivo está en el log |
+| El adaptador dice que no lo entiende (`UnprocessableSourceEventException`: sin entidad, un tipo reservado como `users.admin.*`, una operación desconocida) | En la primera entrega | `FAILED` con el motivo |
+| El adaptador o la base fallan (transitorio) | Tras los reintentos de la entrega (`spring.rabbitmq.listener.simple.retry`, 3) | `FAILED` con el motivo y sus intentos |
+| El consumidor muere con el mensaje en vuelo `delivery-limit` veces (solo colas quorum) | Lo manda el broker (`deathReason: delivery_limit`) | Lo que hubiera: nada, `PROCESSING` o incluso `PROCESSED` |
+
+Hasta ahora una DLQ solo se podía mirar y vaciar desde la consola del broker. `notification-admin`
+tiene tres rutas ([`04-rest-api.md`](04-rest-api.md)): `GET /admin/dead-letters` (cuántos mensajes
+guarda cada una), `GET /admin/dead-letters/{source}` (los primeros, sin sacarlos, con el motivo del
+broker, lo que el inbox sabe de cada uno y, si no llegaría al inbox, por qué) y
+`POST /admin/dead-letters/{source}/reprocess` (volver a pasarlos por el consumidor).
+
+**Cómo reprocesa** (`RabbitDeadLetterQueues`). No republica nada a la cola de trabajo: este servicio
+solo consume, sin confirms, y un mensaje movido entre colas se puede perder a medio camino. Saca los
+mensajes de la DLQ con `basic.get` **sin confirmarlos**, en un canal propio, y pasa cada uno por el
+`SourceEventConsumer` de su fuente, el mismo de la escucha, con el mismo convertidor:
+
+- **La puerta es la misma.** La firma se vuelve a comprobar sobre los bytes (el descarte no toca ni el
+  cuerpo ni las cabeceras del emisor): el mensaje que murió por su firma vuelve a morir por ella, y
+  solo entra cuando el secreto de los dos lados casa. Después, el identificador, el inbox y el
+  adaptador.
+- **Idempotente.** Decide el inbox, por `(message_id, source_service)`: uno que estaba `FAILED` (o que
+  nunca se registró, o cuya fila ya se purgó) se aplica y sale `PROCESSED`; uno que ya estaba aplicado
+  sale `DUPLICATE` sin ejecutar nada. En los dos casos se confirma y deja la DLQ. Detrás del inbox,
+  el registro sigue teniendo su `(source_service, source_event_id)`.
+- **Nada gira.** Un mensaje sin confirmar no se vuelve a entregar en ese canal, así que una pasada ve
+  cada mensaje una sola vez; el que falla otra vez queda `FAILED` y vuelve a la DLQ **al terminar la
+  pasada** (un solo `nack` de lo pendiente), no antes, porque devolverlo en el momento lo pondría otra
+  vez el primero. Nada lo reintenta solo: la siguiente pasada es otra llamada de quien administra.
+- **Nada se pierde.** Se confirma un mensaje solo después de que el inbox lo haya aplicado y su
+  transacción haya terminado. Si el proceso muere a mitad, el broker devuelve a la DLQ lo no
+  confirmado, y el que ya se aplicó sale la próxima vez como `DUPLICATE`.
+- **Acotado.** Una fuente por llamada, `max` mensajes (20; como mucho 100) y 10 s por pasada, por debajo
+  de lo que el gateway espera a un servicio; lo que no entra ni se saca de la cola (`stoppedBy`).
+- **Sin transacción abierta.** Hablar con el broker no retiene ninguna conexión de la base: la del
+  inbox empieza y termina dentro de cada mensaje, y lo que el inbox sabe de un mensaje mirado se lee
+  con el canal ya cerrado.
+
+Mirar es lo mismo sin procesar: saca, describe y lo devuelve todo. No enseña el cuerpo (el JSON crudo
+solo vive en el inbox, y un mensaje descartado por su firma puede traer cualquier cosa); para un
+`FAILED`, `inbox.failureReason` dice por qué. El inbox guarda el exchange, la clave de enrutado y la
+cola **originales**, que se leen de `x-death`, no los del DLX.
+
+Lo que hay que saber al operarlo:
+
+- Solo se alcanza **la cabeza** de la cola: `max` mensajes desde el más antiguo. Si los primeros son
+  veneno, se sube `max` (hasta 100) para llegar a los de detrás; lo que no va a entrar nunca se borra
+  desde la consola del broker, que aquí no se ofrece.
+- No depende de que la escucha de la fuente esté encendida (`listener-enabled`) y no compite con ella:
+  nadie más consume una DLQ. Dos pasadas a la vez sobre la misma DLQ se reparten los mensajes.
+- En una DLQ **quorum**, cada vez que un mensaje vuelve a la cola (mirarlo, o reprocesarlo y que falle)
+  cuenta como una entrega para el broker. Las DLQ se declaran sin `x-delivery-limit`; en RabbitMQ 4.4
+  un mensaje mirado más de treinta veces seguía en su sitio, pero si el broker tiene una política con
+  `delivery-limit` que alcance a las DLQ, mirar muchas veces acabaría tirando el mensaje.
+- Con `app.rabbitmq.enabled=false` la lista responde `enabled: false` y las otras dos, 409 `SRC-409`.
+- Cada pasada deja una línea INFO con quién la pidió y sus recuentos, y cuenta en
+  `mto_notification_dead_letters_reprocessed_total{source, result}` (`processed`, `duplicate`, `failed`).
+
 ## El lector de Keycloak
 
 Lo que la Admin API de Keycloak 26.1 da y no da (comprobado contra uno real en `KeycloakEventsIT`):
@@ -286,7 +350,7 @@ vuelven a aplicar los que ya esperaron (`retry.backoff`, 1 min tras el primer fa
 cada uno, hasta `retry.max-backoff`), hasta `retry.batch-size` por pasada. Con `retry.max-attempts`
 (5) fallos queda `FAILED` para siempre: se ve en `GET /admin/sources`, cuenta en la métrica y se purga
 a los 30 días (`app.notification.retention.inbox-failed`), como los `FAILED` de RabbitMQ, cuyo mensaje
-está en su DLQ. Releerlo por el solape no cuenta como intento: un `FAILED` solo lo toca el reintento.
+está en su DLQ y se reprocesa desde ella (*Las DLQ*). Releerlo por el solape no cuenta como intento: un `FAILED` solo lo toca el reintento.
 
 `mto_notification_keycloak_events_total{source, result}` (Prometheus) cuenta por fuente los eventos
 `ingested`, los `failed` (un fallo que se va a reintentar), los `recovered` (un reintento que entró) y
@@ -319,6 +383,23 @@ credencial. El actor es `SERVICE` cuando el cliente resuelto es `mto-users-svc`
 `mto-ops`, con freno de 5 min por actor.
 
 ## Las reglas de esta fase
+
+**Los perfiles de puesto.** Los `mto-position-*` de `mto-platform`
+(`keycloak/mto-positions-cross-service.json`) dicen qué puede hacer en todo el dominio quien ocupa un
+puesto de la organización de `mto-resources`, y los seis llevan `notification-inbox`, así que tienen
+bandeja. Como audiencia son un `PROFILE:` más (un rol de realm). El **jefe de mantenimiento**
+(`mto-position-chief-maintenance`) recibe todo lo que reciben los responsables de mantenimiento: donde
+la tabla dice `mto-maintenance-manager` léase también `mto-position-chief-maintenance`, con la misma
+condición y los mismos canales. Su puesto es «todo el mantenimiento», con los mismos permisos de
+`mto-maintenance-api` que ese perfil y sin límite de EP, y quien lo ocupa no lleva por fuerza el perfil
+del servicio (los puestos listan sus roles uno a uno, sin anidar perfiles); sin esto no le llegaba
+ningún aviso. `RulesConfigurationTest` exige que una regla que nombre a uno nombre al otro. Quien
+tenga los dos perfiles recibe un solo aviso y un solo correo. Los demás puestos no son audiencia de
+ninguna regla por su perfil: un supervisor, un jefe de equipo o un operario trabajan en los EP de sus
+equipos, y avisar a `PROFILE:mto-position-supervisor` sería avisar a todos los supervisores de cada
+posesión; les llega lo que va a su usuario (la orden asignada, su turno, su equipo, sus
+cualificaciones) y lo demás espera a las audiencias por equipo o zona
+([`05-development-roadmap.md`](05-development-roadmap.md), *Siguiente*).
 
 | Regla | Dispara | A quién | Canales |
 |---|---|---|---|

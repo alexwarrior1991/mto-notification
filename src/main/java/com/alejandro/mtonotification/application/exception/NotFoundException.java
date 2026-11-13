@@ -24,6 +24,17 @@ public class NotFoundException extends BusinessException {
         this.id = null;
     }
 
+    private NotFoundException(String aggregate, String message) {
+        super(message);
+        this.aggregate = aggregate;
+        this.id = null;
+    }
+
+    /** Un agregado que no se identifica por UUID (una fuente, por su nombre): el codigo sale igual de el. */
+    public static NotFoundException of(String aggregate, String message) {
+        return new NotFoundException(aggregate, message);
+    }
+
     public String getAggregate() {
         return aggregate;
     }

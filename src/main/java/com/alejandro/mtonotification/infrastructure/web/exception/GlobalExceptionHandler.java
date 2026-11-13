@@ -2,6 +2,7 @@ package com.alejandro.mtonotification.infrastructure.web.exception;
 
 import com.alejandro.mtonotification.application.dto.error.ApiErrorResponse;
 import com.alejandro.mtonotification.application.dto.error.ValidationError;
+import com.alejandro.mtonotification.application.exception.BrokerUnavailableException;
 import com.alejandro.mtonotification.application.exception.BusinessException;
 import com.alejandro.mtonotification.application.exception.ConflictException;
 import com.alejandro.mtonotification.application.exception.DirectoryUnavailableException;
@@ -89,6 +90,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DirectoryUnavailableException.class)
     public ResponseEntity<ApiErrorResponse> handleDirectoryUnavailable(DirectoryUnavailableException exception, HttpServletRequest request) {
         LOGGER.warn("Directory unavailable for {} {}: {}", request.getMethod(), request.getRequestURI(), exception.getMessage());
+        return businessResponse(exception, HttpStatus.SERVICE_UNAVAILABLE, request);
+    }
+
+    /** 503: RabbitMQ no responde (las DLQ de la administracion). Transitorio, como el directorio. */
+    @ExceptionHandler(BrokerUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleBrokerUnavailable(BrokerUnavailableException exception, HttpServletRequest request) {
+        LOGGER.warn("Broker unavailable for {} {}: {}", request.getMethod(), request.getRequestURI(), exception.getMessage());
         return businessResponse(exception, HttpStatus.SERVICE_UNAVAILABLE, request);
     }
 

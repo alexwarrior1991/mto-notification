@@ -1,11 +1,13 @@
 package com.alejandro.mtonotification.configuration.rabbitmq;
 
+import com.alejandro.mtonotification.application.service.DeadLetterQueues;
 import com.alejandro.mtonotification.application.service.SourceEventProcessor;
 import com.alejandro.mtonotification.configuration.messaging.MessagePayloadSignatureVerifier;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.ConfigurationSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.FieldSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.MaintenanceSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.MasterDataSourceConsumer;
+import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.RabbitDeadLetterQueues;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.RabbitListenerContainerFactoryNames;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.ResourcesSourceConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.SourceRabbitMqNames;
@@ -13,6 +15,7 @@ import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.StockSour
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.UsersSourceConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Declarable;
@@ -38,7 +41,7 @@ import java.util.Map;
 
 /**
  * Declara la topologia de cada fuente y cablea sus consumidores. Este servicio solo consume: no
- * hay {@code RabbitTemplate} ni confirms. Cada exchange se redeclara con los atributos del emisor
+ * publica nada y no necesita confirms (el reproceso de las DLQ tampoco publica). Cada exchange se redeclara con los atributos del emisor
  * (topic, durable, sin auto-delete): una diferencia hace que el broker cierre el canal y la cola se
  * quede sin binding, sin ningun error despues del arranque. Todo se apaga con
  * {@code app.rabbitmq.enabled=false}: sin estos beans nadie abre una conexion.
@@ -110,6 +113,18 @@ public class RabbitMqConfiguration {
         factory.setMessageConverter(sourceMessageConverter);
         factory.setDefaultRequeueRejected(false);
         return factory;
+    }
+
+    /**
+     * Las DLQ para la administracion: mirar y reprocesar. Usa la conexion de Boot y el mismo
+     * convertidor, el mismo procesador y el mismo verificador de firma que las escuchas, y no depende
+     * de que la escucha de una fuente este encendida.
+     */
+    @Bean
+    public DeadLetterQueues deadLetterQueues(ConnectionFactory connectionFactory, AmqpAdmin amqpAdmin,
+                                             MessageConverter sourceMessageConverter, SourceEventProcessor processor,
+                                             MessagePayloadSignatureVerifier signatureVerifier) {
+        return new RabbitDeadLetterQueues(connectionFactory, amqpAdmin, properties, sourceMessageConverter, processor, signatureVerifier);
     }
 
     @Bean

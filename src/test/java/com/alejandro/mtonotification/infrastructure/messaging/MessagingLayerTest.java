@@ -1,10 +1,18 @@
 package com.alejandro.mtonotification.infrastructure.messaging;
 
+import com.alejandro.mtonotification.application.dto.deadletter.DeadLetter;
+import com.alejandro.mtonotification.application.dto.deadletter.DeadLetterQueueDepth;
+import com.alejandro.mtonotification.application.dto.deadletter.DeadLetterReprocessing;
+import com.alejandro.mtonotification.application.dto.deadletter.ReprocessedDeadLetter;
 import com.alejandro.mtonotification.application.dto.messaging.InboxMessageCommand;
 import com.alejandro.mtonotification.application.dto.messaging.InboxProcessingResult;
 import com.alejandro.mtonotification.application.dto.messaging.SourceEnvelope;
 import com.alejandro.mtonotification.application.dto.messaging.SourceEventContext;
+import com.alejandro.mtonotification.application.exception.BrokerUnavailableException;
+import com.alejandro.mtonotification.application.exception.ConflictException;
+import com.alejandro.mtonotification.application.exception.NotFoundException;
 import com.alejandro.mtonotification.application.exception.UnprocessableSourceEventException;
+import com.alejandro.mtonotification.application.service.DeadLetterQueues;
 import com.alejandro.mtonotification.application.service.SourceEventProcessor;
 import com.alejandro.mtonotification.configuration.messaging.MessagePayloadSignatureVerifier;
 import com.alejandro.mtonotification.configuration.messaging.MessageSignatureMode;
@@ -13,12 +21,19 @@ import com.alejandro.mtonotification.configuration.messaging.MessagingConfigurat
 import com.alejandro.mtonotification.configuration.rabbitmq.RabbitMqConfiguration;
 import com.alejandro.mtonotification.configuration.rabbitmq.ConsumerQueueProperties;
 import com.alejandro.mtonotification.configuration.rabbitmq.SourceRabbitProperties;
+import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.RabbitDeadLetterQueues;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.RabbitListenerContainerFactoryNames;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.SourceEventConsumer;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.SourceMessageCommandFactory;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.SourceMessageHeaders;
 import com.alejandro.mtonotification.infrastructure.messaging.rabbitmq.SourceRabbitMqNames;
+import com.rabbitmq.client.AMQP;
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Envelope;
+import com.rabbitmq.client.GetResponse;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
+import org.springframework.amqp.AmqpConnectException;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.core.Binding;
@@ -28,8 +43,11 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueInformation;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.connection.Connection;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.boot.amqp.autoconfigure.RabbitAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -46,6 +64,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
@@ -62,6 +81,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * El canal de datos maestros sin broker: el contrato tal como lo publica mto-configuration (el
@@ -402,6 +430,172 @@ class MessagingLayerTest {
         assertTrue(processor.envelopes.isEmpty());
     }
 
+    // --- las DLQ ---
+
+    @Test
+    void theDeadLetterQueuesAreCountedPerSourceAndAMissingOneSaysSo() {
+        AmqpAdmin admin = mock(AmqpAdmin.class);
+        when(admin.getQueueInfo(SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_QUEUE))
+                .thenReturn(new QueueInformation(SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_QUEUE, 3, 0));
+        RabbitDeadLetterQueues deadLetters = deadLetters(mock(Channel.class), admin, new RecordingProcessor(InboxProcessingResult.PROCESSED), NO_SIGNATURE_CHECK);
+
+        assertEquals(List.of(
+                        new DeadLetterQueueDepth("master-data", SourceRabbitMqNames.MASTER_DATA_QUEUE, SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_QUEUE, 3L),
+                        new DeadLetterQueueDepth("users", SourceRabbitMqNames.USERS_QUEUE, SourceRabbitMqNames.USERS_DEAD_LETTER_QUEUE, null)),
+                deadLetters.depths(), "por orden alfabetico; la que el broker no tiene, sin recuento");
+        assertEquals(3L, deadLetters.depth(" Master-Data ").messages());
+
+        NotFoundException unknown = assertThrows(NotFoundException.class, () -> deadLetters.depth("warehouse"));
+        assertEquals("Source", unknown.getAggregate());
+        assertThrows(NotFoundException.class, () -> deadLetters.peek("warehouse", 5));
+        assertThrows(ConflictException.class, () -> deadLetters.peek("users", 5), "una DLQ que no existe no se lee");
+        assertThrows(ConflictException.class, () -> deadLetters.reprocess("users", 5, Duration.ofSeconds(10)));
+    }
+
+    @Test
+    void peekingLeavesEveryDeadLetterInItsQueueAndSaysWhyItWouldNotReachTheInbox() throws IOException {
+        Channel channel = openChannel();
+        byte[] body = PUBLISHED_MESSAGE_JSON.getBytes(StandardCharsets.UTF_8);
+        when(channel.basicGet(SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_QUEUE, false)).thenReturn(
+                deadLetter(11, body, hmac(SECRET, body)),
+                deadLetter(12, PUBLISHED_MESSAGE_JSON.replace("Sants", "Nord").getBytes(StandardCharsets.UTF_8), hmac(SECRET, body)),
+                deadLetter(13, "no es json".getBytes(StandardCharsets.UTF_8), null),
+                null);
+        RecordingProcessor processor = new RecordingProcessor(InboxProcessingResult.PROCESSED);
+        RabbitDeadLetterQueues deadLetters = deadLetters(channel, existingQueues(), processor, verifier(SECRET, MessageSignatureMode.OPTIONAL));
+
+        List<DeadLetter> peeked = deadLetters.peek("master-data", 10);
+
+        assertEquals(3, peeked.size());
+        DeadLetter first = peeked.getFirst();
+        assertEquals("0f8b1f4c-3f6a-4a6d-9a2a-1c9f5f6f2b10", first.messageId(), "la clave del inbox: el operationId del sobre");
+        assertEquals("mto-configuration", first.sourceService());
+        assertEquals("MASTER_DATA_STATION_UPDATED", first.eventType());
+        assertEquals("station", first.aggregateType());
+        assertEquals(SourceRabbitMqNames.MASTER_DATA_EXCHANGE, first.exchange(), "lo original, de x-death, no el DLX");
+        assertEquals("mto.master-data.station.updated", first.routingKey());
+        assertEquals("rejected", first.deathReason());
+        assertEquals(1L, first.deathCount());
+        assertEquals(Instant.parse("2026-09-01T10:16:00Z"), first.deadLetteredAt());
+        assertEquals(body.length, first.payloadBytes());
+        assertNull(first.problem(), "este llegaria al inbox");
+        assertTrue(peeked.get(1).problem().contains("signature does not match"), peeked.get(1).problem());
+        assertNotNull(peeked.get(2).problem(), "un cuerpo que no es el sobre");
+        assertEquals("amqp-13", peeked.get(2).messageId(), "sin sobre, el message_id de AMQP");
+
+        assertTrue(processor.envelopes.isEmpty(), "mirar no procesa nada");
+        verify(channel, never()).basicAck(anyLong(), anyBoolean());
+        verify(channel).basicNack(13, true, true);
+        verify(channel, times(1)).basicNack(anyLong(), anyBoolean(), anyBoolean());
+
+        Channel bounded = openChannel();
+        when(bounded.basicGet(SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_QUEUE, false)).thenReturn(deadLetter(1, body, null), deadLetter(2, body, null));
+        assertEquals(1, deadLetters(bounded, existingQueues(), processor, NO_SIGNATURE_CHECK).peek("master-data", 1).size());
+        verify(bounded, times(1)).basicGet(anyString(), anyBoolean());
+        verify(bounded).basicNack(1, true, true);
+    }
+
+    @Test
+    void reprocessingAcknowledgesWhatWasAppliedAndReturnsOnceWhatFailsAgain() throws IOException {
+        Channel channel = openChannel();
+        byte[] body = PUBLISHED_MESSAGE_JSON.getBytes(StandardCharsets.UTF_8);
+        String poison = PUBLISHED_MESSAGE_JSON.replace("0f8b1f4c-3f6a-4a6d-9a2a-1c9f5f6f2b10", "0f8b1f4c-3f6a-4a6d-9a2a-1c9f5f6f2b66");
+        String repeated = PUBLISHED_MESSAGE_JSON.replace("0f8b1f4c-3f6a-4a6d-9a2a-1c9f5f6f2b10", "0f8b1f4c-3f6a-4a6d-9a2a-1c9f5f6f2b77");
+        when(channel.basicGet(SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_QUEUE, false)).thenReturn(
+                deadLetter(1, body, null),
+                deadLetter(2, poison.getBytes(StandardCharsets.UTF_8), null),
+                deadLetter(3, repeated.getBytes(StandardCharsets.UTF_8), null),
+                null);
+        List<InboxMessageCommand> commands = new ArrayList<>();
+        List<SourceEventContext> contexts = new ArrayList<>();
+        SourceEventProcessor processor = (command, envelope, context) -> {
+            commands.add(command);
+            contexts.add(context);
+            if (command.messageId().endsWith("66")) {
+                throw new IllegalStateException("the adapter still cannot apply it");
+            }
+            return command.messageId().endsWith("77") ? InboxProcessingResult.DUPLICATE_SKIPPED : InboxProcessingResult.PROCESSED;
+        };
+
+        DeadLetterReprocessing reprocessing = deadLetters(channel, existingQueues(), processor, NO_SIGNATURE_CHECK)
+                .reprocess("master-data", 10, Duration.ofSeconds(10));
+
+        assertEquals(List.of(ReprocessedDeadLetter.Outcome.PROCESSED, ReprocessedDeadLetter.Outcome.FAILED, ReprocessedDeadLetter.Outcome.DUPLICATE),
+                reprocessing.results().stream().map(ReprocessedDeadLetter::outcome).toList());
+        assertEquals(DeadLetterReprocessing.StoppedBy.EMPTY, reprocessing.stoppedBy());
+        assertEquals("the adapter still cannot apply it", reprocessing.results().get(1).reason());
+        assertEquals("0f8b1f4c-3f6a-4a6d-9a2a-1c9f5f6f2b66", reprocessing.results().get(1).messageId());
+        assertEquals(3, commands.size(), "cada mensaje pasa una vez: el que falla no se vuelve a sacar en la misma pasada");
+        assertEquals(SourceRabbitMqNames.MASTER_DATA_EXCHANGE, commands.getFirst().exchangeName(), "el inbox guarda lo original, no el DLX");
+        assertEquals("mto.master-data.station.updated", commands.getFirst().routingKey());
+        assertEquals(SourceRabbitMqNames.MASTER_DATA_QUEUE, commands.getFirst().queueName());
+        assertEquals("master-data", contexts.getFirst().sourceId());
+        assertEquals(7L, contexts.getFirst().sequenceNumber(), "las cabeceras del emisor sobreviven al descarte");
+
+        // Los aplicados se confirman uno a uno; el fallido vuelve a la cola una vez y al final.
+        InOrder order = inOrder(channel);
+        order.verify(channel).basicAck(1, false);
+        order.verify(channel).basicAck(3, false);
+        order.verify(channel).basicNack(2, true, true);
+        verify(channel, times(2)).basicAck(anyLong(), anyBoolean());
+        verify(channel, times(1)).basicNack(anyLong(), anyBoolean(), anyBoolean());
+        verify(channel, times(4)).basicGet(anyString(), anyBoolean());
+    }
+
+    @Test
+    void reprocessingChecksTheSignatureAgainAndStopsAtItsMaximumAndItsTimeBudget() throws IOException {
+        byte[] body = PUBLISHED_MESSAGE_JSON.getBytes(StandardCharsets.UTF_8);
+        RecordingProcessor processor = new RecordingProcessor(InboxProcessingResult.PROCESSED);
+
+        // El que murio por su firma vuelve a morir por ella: no entra por la puerta de atras.
+        Channel tampered = openChannel();
+        when(tampered.basicGet(anyString(), anyBoolean())).thenReturn(
+                deadLetter(1, PUBLISHED_MESSAGE_JSON.replace("Sants", "Nord").getBytes(StandardCharsets.UTF_8), hmac(SECRET, body)),
+                deadLetter(2, "no es json".getBytes(StandardCharsets.UTF_8), null),
+                null);
+        DeadLetterReprocessing rejected = deadLetters(tampered, existingQueues(), processor, verifier(SECRET, MessageSignatureMode.REQUIRED))
+                .reprocess("master-data", 10, Duration.ofSeconds(10));
+        assertEquals(2, rejected.count(ReprocessedDeadLetter.Outcome.FAILED));
+        assertTrue(rejected.results().getFirst().reason().contains("signature does not match"), rejected.results().getFirst().reason());
+        assertTrue(processor.envelopes.isEmpty());
+        verify(tampered, never()).basicAck(anyLong(), anyBoolean());
+        verify(tampered).basicNack(2, true, true);
+
+        // Con todo aplicado no queda nada que devolver: un nack de una entrega ya confirmada cerraria el canal.
+        Channel applied = openChannel();
+        when(applied.basicGet(anyString(), anyBoolean())).thenReturn(deadLetter(1, body, null), deadLetter(2, body, null), deadLetter(3, body, null), null);
+        DeadLetterReprocessing bounded = deadLetters(applied, existingQueues(), processor, NO_SIGNATURE_CHECK)
+                .reprocess("master-data", 2, Duration.ofSeconds(10));
+        assertEquals(DeadLetterReprocessing.StoppedBy.MAX, bounded.stoppedBy());
+        assertEquals(2, bounded.count(ReprocessedDeadLetter.Outcome.PROCESSED));
+        verify(applied, times(2)).basicGet(anyString(), anyBoolean());
+        verify(applied, never()).basicNack(anyLong(), anyBoolean(), anyBoolean());
+
+        Channel late = openChannel();
+        DeadLetterReprocessing outOfTime = deadLetters(late, existingQueues(), processor, NO_SIGNATURE_CHECK)
+                .reprocess("master-data", 5, Duration.ZERO);
+        assertEquals(DeadLetterReprocessing.StoppedBy.TIME_BUDGET, outOfTime.stoppedBy());
+        assertTrue(outOfTime.results().isEmpty());
+        verify(late, never()).basicGet(anyString(), anyBoolean());
+    }
+
+    @Test
+    void aBrokerThatDoesNotAnswerIsAnOutageAndWhatWasTakenOutGoesBack() throws IOException {
+        AmqpAdmin down = mock(AmqpAdmin.class);
+        when(down.getQueueInfo(anyString())).thenThrow(new AmqpConnectException(new java.net.ConnectException("Connection refused")));
+        RabbitDeadLetterQueues unreachable = deadLetters(mock(Channel.class), down, new RecordingProcessor(InboxProcessingResult.PROCESSED), NO_SIGNATURE_CHECK);
+        assertThrows(BrokerUnavailableException.class, unreachable::depths);
+        assertThrows(BrokerUnavailableException.class, () -> unreachable.peek("master-data", 1));
+
+        // El canal se rompe a mitad: lo ya sacado se devuelve (o lo devuelve el broker al cerrar el canal).
+        Channel channel = openChannel();
+        byte[] body = PUBLISHED_MESSAGE_JSON.getBytes(StandardCharsets.UTF_8);
+        when(channel.basicGet(anyString(), anyBoolean())).thenReturn(deadLetter(1, body, null)).thenThrow(new IOException("connection reset"));
+        RabbitDeadLetterQueues broken = deadLetters(channel, existingQueues(), new RecordingProcessor(InboxProcessingResult.PROCESSED), NO_SIGNATURE_CHECK);
+        assertThrows(BrokerUnavailableException.class, () -> broken.peek("master-data", 5));
+        verify(channel).basicNack(1, true, true);
+    }
+
     // --- topologia ---
 
     @Test
@@ -528,6 +722,7 @@ class MessagingLayerTest {
             assertTrue(context.containsBean("fieldSourceConsumer"));
             assertTrue(context.containsBean("resourcesSourceConsumer"));
             assertTrue(context.containsBean("sourceTopology"));
+            assertNotNull(context.getBean(DeadLetterQueues.class), "las DLQ se administran aunque una escucha este apagada");
         });
         contextRunner.withPropertyValues("app.rabbitmq.sources.users.listener-enabled=false",
                 "app.rabbitmq.sources.configuration.listener-enabled=false",
@@ -550,6 +745,7 @@ class MessagingLayerTest {
             assertFalse(context.containsBean("fieldSourceConsumer"));
             assertFalse(context.containsBean("sourceTopology"));
             assertFalse(context.containsBean(RabbitListenerContainerFactoryNames.SOURCES));
+            assertEquals(0, context.getBeanNamesForType(DeadLetterQueues.class).length, "sin broker no hay DLQ que administrar");
         });
     }
 
@@ -595,6 +791,65 @@ class MessagingLayerTest {
         } catch (Exception exception) {
             throw new IllegalStateException(exception);
         }
+    }
+
+    private static final SourceRabbitProperties DEAD_LETTER_SOURCES = new SourceRabbitProperties(true, Map.of(
+            "master-data", new SourceRabbitProperties.Source(SourceRabbitMqNames.MASTER_DATA_EXCHANGE, SourceRabbitMqNames.MASTER_DATA_ROUTING_PATTERN,
+                    SourceRabbitMqNames.MASTER_DATA_QUEUE, SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_EXCHANGE,
+                    SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_QUEUE, SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_ROUTING_KEY, true),
+            "users", new SourceRabbitProperties.Source(SourceRabbitMqNames.USERS_EXCHANGE, SourceRabbitMqNames.USERS_ROUTING_PATTERN,
+                    SourceRabbitMqNames.USERS_QUEUE, SourceRabbitMqNames.USERS_DEAD_LETTER_EXCHANGE,
+                    SourceRabbitMqNames.USERS_DEAD_LETTER_QUEUE, SourceRabbitMqNames.USERS_DEAD_LETTER_ROUTING_KEY, true)));
+
+    /** Las DLQ sobre un canal simulado: lo que se comprueba es que se le pide al broker, y en que orden. */
+    private static RabbitDeadLetterQueues deadLetters(Channel channel, AmqpAdmin admin, SourceEventProcessor processor,
+                                                      MessagePayloadSignatureVerifier signatureVerifier) {
+        Connection connection = mock(Connection.class);
+        when(connection.createChannel(false)).thenReturn(channel);
+        ConnectionFactory connectionFactory = mock(ConnectionFactory.class);
+        when(connectionFactory.createConnection()).thenReturn(connection);
+        MessageConverter converter = new RabbitMqConfiguration(DEAD_LETTER_SOURCES, new ConsumerQueueProperties(null, null))
+                .sourceMessageConverter(JsonMapper.builder().build());
+        return new RabbitDeadLetterQueues(connectionFactory, admin, DEAD_LETTER_SOURCES, converter, processor, signatureVerifier);
+    }
+
+    private static Channel openChannel() {
+        Channel channel = mock(Channel.class);
+        when(channel.isOpen()).thenReturn(true);
+        return channel;
+    }
+
+    private static AmqpAdmin existingQueues() {
+        AmqpAdmin admin = mock(AmqpAdmin.class);
+        when(admin.getQueueInfo(anyString())).thenAnswer(call -> new QueueInformation(call.getArgument(0), 1, 0));
+        return admin;
+    }
+
+    /** Un mensaje tal como sale de la DLQ: por el DLX, con la clave de la DLQ y con lo original en {@code x-death}. */
+    private static GetResponse deadLetter(long deliveryTag, byte[] body, String signature) {
+        Map<String, Object> headers = new java.util.HashMap<>();
+        headers.put(SourceMessageHeaders.EVENT_TYPE, "MASTER_DATA_STATION_UPDATED");
+        headers.put(SourceMessageHeaders.SEQUENCE_NUMBER, 7L);
+        if (signature != null) {
+            headers.put(SourceMessageHeaders.SIGNATURE, signature);
+            headers.put(SourceMessageHeaders.SIGNATURE_ALGORITHM, "HMAC-SHA256");
+        }
+        headers.put("x-death", List.of(Map.of(
+                "count", 1L,
+                "reason", "rejected",
+                "queue", SourceRabbitMqNames.MASTER_DATA_QUEUE,
+                "time", java.util.Date.from(Instant.parse("2026-09-01T10:16:00Z")),
+                "exchange", SourceRabbitMqNames.MASTER_DATA_EXCHANGE,
+                "routing-keys", List.of("mto.master-data.station.updated"))));
+        AMQP.BasicProperties properties = new AMQP.BasicProperties.Builder()
+                .contentType(MessageProperties.CONTENT_TYPE_JSON)
+                .contentEncoding(StandardCharsets.UTF_8.name())
+                .messageId("amqp-" + deliveryTag)
+                .headers(headers)
+                .build();
+        Envelope envelope = new Envelope(deliveryTag, false, SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_EXCHANGE,
+                SourceRabbitMqNames.MASTER_DATA_DEAD_LETTER_ROUTING_KEY);
+        return new GetResponse(envelope, properties, body, 0);
     }
 
     private static Message rawMessageWithSequence(Object sequenceNumber) {

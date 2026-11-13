@@ -89,6 +89,18 @@ Authorization: Bearer {{accessToken}}
 POST {{baseUrl}}/admin/deliveries/00000000-0000-0000-0000-000000000000/retry
 Authorization: Bearer {{accessToken}}
 
+### Cuantos mensajes guarda la DLQ de cada fuente
+GET {{baseUrl}}/admin/dead-letters
+Authorization: Bearer {{accessToken}}
+
+### Los primeros mensajes de la DLQ de una fuente, sin sacarlos (404 SRC-404 con una fuente desconocida)
+GET {{baseUrl}}/admin/dead-letters/maintenance?max=5
+Authorization: Bearer {{accessToken}}
+
+### Volver a procesar la DLQ de una fuente: lo aplicado sale de ella, lo que falla otra vez se queda
+POST {{baseUrl}}/admin/dead-letters/maintenance/reprocess?max=20
+Authorization: Bearer {{accessToken}}
+
 ### Un correo de prueba (202; en local aparece en Mailpit, http://localhost:8025)
 POST {{baseUrl}}/admin/test-email
 Authorization: Bearer {{accessToken}}

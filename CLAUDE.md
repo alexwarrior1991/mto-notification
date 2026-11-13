@@ -73,10 +73,12 @@ Las mismas tres capas que `mto-maintenance` bajo `com.alejandro.mtonotification`
   a través de `DeliveryRelayServiceImpl`). Aparte: `BurstAggregatorImpl` (ráfagas y su cierre),
   `YamlRuleRepository` + `RuleExpressionEvaluator` (SpEL de solo lectura), `ThrottleGateImpl`,
   `SourceCursorServiceImpl`, `InboxQueryServiceImpl`, `ActivityQueryServiceImpl`,
-  `AdminServiceImpl`, `RetentionPurgeImpl`.
+  `AdminServiceImpl`, `DeadLetterAdminServiceImpl` (las DLQ para quien administra, sobre el puerto
+  `DeadLetterQueues`), `RetentionPurgeImpl`.
 - `infrastructure` — `persistence` (JPA, repositorios con SQL nativo condicional, specifications),
   `web` (`NotificationApiPaths`, controladores, `GlobalExceptionHandler`), `messaging/rabbitmq`
-  (`SourceEventConsumer`, un `@RabbitListener` por fuente), `keycloak` (`RestKeycloakEventsClient`,
+  (`SourceEventConsumer`, un `@RabbitListener` por fuente; `RabbitDeadLetterQueues`, mirar y reprocesar
+  las DLQ), `keycloak` (`RestKeycloakEventsClient`,
   `RestKeycloakDirectoryClient` sobre `RestClient`, circuito `keycloak`), `mail` (`EmailChannel`).
 - `configuration` — `security` (resource server de Keycloak, las mismas piezas que los hermanos;
   `CurrentUserService.getAudienceKeys()` da las claves de la bandeja), `web` (`CorrelationIdFilter`),
@@ -167,6 +169,11 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
   `ActivityTypes`, audiencia o canal desconocidos impiden arrancar. Una regla que falla al
   evaluarse se salta y se registra; las demás siguen. Un tipo nuevo va a `ActivityTypes` antes que
   a una regla.
+- **Lo que recibe `mto-maintenance-manager` lo recibe `mto-position-chief-maintenance`**, el perfil de
+  puesto del jefe de mantenimiento (de `mto-platform`; los seis `mto-position-*` llevan
+  `notification-inbox`): una regla que nombre a uno nombra al otro, con la misma condición
+  (`RulesConfigurationTest`). Ningún otro puesto es audiencia por su perfil: trabajan por EP, y eso
+  espera a las audiencias por equipo o zona (`docs/06-messaging.md`, *Las reglas de esta fase*).
 - **Todo el HTTP hacia Keycloak corre fuera de transacción** (el lector: arrendamiento → HTTP →
   una transacción por evento → avance de la marca; el despachador: reclamar → resolver → enviar →
   marcar). Keycloak caído solo retrasa el correo y deja la marca donde estaba.
@@ -184,6 +191,14 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
   pasada, con la marca antes del evento, Keycloak caído (`DirectoryUnavailableException`) y no poder
   ni apuntar el fallo (la base caída). Los `FAILED` se purgan con su retención
   (`retention.inbox-failed`) y se cuentan en `mto_notification_keycloak_events_total{result}`.
+- **Una DLQ se reprocesa por la misma puerta, sin republicar y sin girar** (`/admin/dead-letters`,
+  `RabbitDeadLetterQueues`, `docs/06-messaging.md`, *Las DLQ*). Los mensajes se sacan con `basic.get`
+  sin confirmar y pasan por `SourceEventConsumer` (la firma otra vez, el inbox, el adaptador): se
+  confirma solo lo que el inbox aplicó o ya tenía aplicado, y lo que falla vuelve a la DLQ con un
+  único `nack` al terminar la pasada, nunca antes (volvería a salir el primero) y nunca un `nack` de
+  algo ya confirmado (cierra el canal). Una fuente, `max` mensajes y 10 s por llamada; nada lo repite
+  solo. Ni `DeadLetterAdminServiceImpl` ni `RabbitDeadLetterQueues` son transaccionales: el broker
+  nunca se toca con una transacción de la base abierta. Mirar no devuelve el cuerpo.
 - **Lo que corre solo se apaga en los tests** (`application-test.yml`: lector, despachador, cierre
   de ráfagas, purga, correo) y cada test enciende lo que prueba llamándolo. `MtoNotificationApplicationTests`
   y `KeycloakEventsIT` ponen esas properties a mano porque corren con el perfil por defecto.
@@ -197,10 +212,12 @@ YAML real carga; una regla rota impide arrancar), `BusinessLayerTest` (motor, in
 rachas, datos maestros, los trabajos de configuración, las acciones de `mto-users` y los eventos de
 `mto-maintenance`, de `mto-stock`, de `mto-field` y de `mto-resources` con los ejemplos de `src/test/resources/contracts`,
 las reglas de mantenimiento, de almacén, de campo y de recursos enviadas pasando por el motor real, el correlador, adaptadores y lector
-de Keycloak, despachador y resolutor, y el filtro de IP de los accesos, que nunca consulta el DNS;
+de Keycloak, despachador y resolutor, el filtro de IP de los accesos, que nunca consulta el DNS, y las DLQ de la
+administración: sus límites, sus recuentos y el broker apagado;
 con dobles), `MessagingLayerTest` (el JSON literal de `mto-configuration`
 y los ejemplos de cada productor, consumidor, inbox, firma y topología de las siete fuentes con
-`ApplicationContextRunner`), `KeycloakEventsClientTest` (`MockRestServiceServer`),
+`ApplicationContextRunner`; y las DLQ sobre un `Channel` simulado: qué se confirma, qué se devuelve
+y en qué orden), `KeycloakEventsClientTest` (`MockRestServiceServer`),
 `MailLayerTest` (GreenMail), `MapperLayerTest`, `DtoValidationTest`, `JpaEntityModelTest`,
 `RestControllerLayerTest` (`@WebMvcTest` de los cuatro controladores con la cadena real y
 `jwt()`), `GlobalExceptionHandlerTest`, `SecurityLayerTest`, `ApiAuthorizationRulesTest`
