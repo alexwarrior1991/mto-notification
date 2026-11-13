@@ -172,7 +172,10 @@ reprocesar; el detalle y lo que garantiza, en [`docs/06-messaging.md`](docs/06-m
 `title`/`body`/`link` (plantillas)
 y `throttle`. Se validan al arrancar: un tipo, una audiencia o un canal desconocidos impiden
 arrancar, que es como una errata no se descubre el día que el evento por fin llega.
-`GET /admin/rules` enseña las cargadas.
+`GET /admin/rules` enseña las cargadas. De los perfiles de puesto de `mto-platform` (`mto-position-*`),
+el jefe de mantenimiento (`mto-position-chief-maintenance`) recibe lo mismo que
+`mto-maintenance-manager`; los demás, lo que va a su usuario
+([`docs/06-messaging.md`](docs/06-messaging.md), *Las reglas de esta fase*).
 
 ## Seguridad
 

@@ -169,6 +169,11 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
   `ActivityTypes`, audiencia o canal desconocidos impiden arrancar. Una regla que falla al
   evaluarse se salta y se registra; las demás siguen. Un tipo nuevo va a `ActivityTypes` antes que
   a una regla.
+- **Lo que recibe `mto-maintenance-manager` lo recibe `mto-position-chief-maintenance`**, el perfil de
+  puesto del jefe de mantenimiento (de `mto-platform`; los seis `mto-position-*` llevan
+  `notification-inbox`): una regla que nombre a uno nombra al otro, con la misma condición
+  (`RulesConfigurationTest`). Ningún otro puesto es audiencia por su perfil: trabajan por EP, y eso
+  espera a las audiencias por equipo o zona (`docs/06-messaging.md`, *Las reglas de esta fase*).
 - **Todo el HTTP hacia Keycloak corre fuera de transacción** (el lector: arrendamiento → HTTP →
   una transacción por evento → avance de la marca; el despachador: reclamar → resolver → enviar →
   marcar). Keycloak caído solo retrasa el correo y deja la marca donde estaba.

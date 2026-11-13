@@ -14,6 +14,13 @@
 #   title/body/link   plantillas; link es una ruta del backoffice (el correo la hace absoluta)
 #   throttle   un disparo por regla y clave en la ventana (window ISO-8601 o 30m/1h/1d)
 #
+# El jefe de mantenimiento (el perfil de puesto mto-position-chief-maintenance de mto-platform) recibe
+# lo mismo que los responsables de mantenimiento (mto-maintenance-manager): su puesto es todo el
+# mantenimiento, sin limite de EP, y quien lo ocupa no tiene por que llevar ademas el perfil del
+# servicio. Una regla que nombre a uno nombra al otro (RulesConfigurationTest lo exige). Los demas
+# puestos (supervisor, jefe de equipo, operario) trabajan en los EP de sus equipos: avisarles por
+# perfil seria avisar a todos los de su puesto, y espera a las audiencias por equipo o zona.
+#
 # Lo que se registra sin aviso (access.login, access.logout, las rafagas pequenas...) simplemente
 # no tiene regla.
 
@@ -78,7 +85,7 @@ rules:
   - key: configuration-large-burst
     event: configuration.*
     when: "event.eventCount >= vars['large-burst-threshold']"
-    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-ops]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance, PROFILE:mto-ops]
     channels: [inbox]
     title: "#{event.eventCount} #{payload.entityName} #{payload.operation == 'created' ? 'dados de alta' : (payload.operation == 'deleted' ? 'dados de baja' : 'modificados')}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha #{payload.operation == 'created' ? 'creado' : (payload.operation == 'deleted' ? 'borrado' : 'modificado')} #{event.eventCount} #{payload.entityName} en mto-configuration entre #{payload.openedAt} y #{payload.lastEventAt}."
@@ -92,7 +99,7 @@ rules:
       - configuration.disconnector.deleted
       - configuration.section-insulator.deleted
     severity: WARNING
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox, email]
     title: "Baja de #{payload.entityName} #{event.subjectLabel ?: event.subjectId}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha dado de baja #{payload.entityName} #{event.subjectLabel ?: event.subjectId} en mto-configuration. Los activos de mantenimiento que dependan de ello quedan desactivados en origen."
@@ -100,7 +107,7 @@ rules:
 
   - key: configuration-package-created
     event: configuration.execution-package.created
-    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-warehouse-admin]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance, PROFILE:mto-warehouse-admin]
     channels: [inbox]
     title: "Nuevo paquete de ejecucion #{event.subjectLabel ?: event.subjectId}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha creado el paquete de ejecucion #{event.subjectLabel ?: event.subjectId}; en el almacen aparece como proyecto EP-#{event.subjectId}."
@@ -216,7 +223,7 @@ rules:
     event: maintenance.order.created
     when: "payload.type == 'URGENT'"
     severity: CRITICAL
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox, email]
     title: "Orden urgente #{payload.code}: #{payload.title}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha abierto la orden urgente #{payload.code} sobre #{payload.assetCode}#{payload.assetName != null ? ' (' + payload.assetName + ')' : ''}#{payload.trackId != null ? ', via ' + payload.trackId : ''}."
@@ -234,7 +241,7 @@ rules:
   - key: maintenance-order-closed
     event: maintenance.order.status-changed
     when: "payload.to == 'COMPLETED' or payload.to == 'CANCELLED'"
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "Orden #{payload.code} #{payload.to == 'COMPLETED' ? 'completada' : 'cancelada'}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha #{payload.to == 'COMPLETED' ? 'completado' : 'cancelado'} la orden #{payload.code} (#{payload.title}) sobre #{payload.assetCode}#{payload.comment != null ? ': ' + payload.comment : ''}."
@@ -244,7 +251,7 @@ rules:
     event: maintenance.defect.created
     when: "payload.severity == 'CRITICAL'"
     severity: CRITICAL
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox, email]
     title: "Defecto critico #{payload.code} en #{payload.assetCode}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha registrado el defecto critico #{payload.code} en #{payload.assetCode}: #{payload.description}#{payload.inspectionCode != null ? ' (inspeccion ' + payload.inspectionCode + ')' : ''}#{payload.orderCode != null ? ' (orden ' + payload.orderCode + ')' : ''}"
@@ -253,7 +260,7 @@ rules:
   - key: maintenance-defect-high
     event: maintenance.defect.created
     when: "payload.severity == 'HIGH'"
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "Defecto grave #{payload.code} en #{payload.assetCode}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha registrado el defecto grave #{payload.code} en #{payload.assetCode}: #{payload.description}#{payload.repairPlannedDate != null ? '. Reparacion prevista para el ' + payload.repairPlannedDate : ''}"
@@ -263,7 +270,7 @@ rules:
     event: maintenance.inspection.created
     when: "payload.result == 'UNSAFE'"
     severity: CRITICAL
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox, email]
     title: "Inspeccion #{payload.code} en #{payload.assetCode}: estado inseguro"
     body: "#{event.actorUsername ?: 'Un proceso'} ha registrado la inspeccion #{payload.code} sobre #{payload.assetCode} con resultado UNSAFE#{payload.inspector != null ? ' (inspector ' + payload.inspector + ')' : ''}. Toca abrir la orden correctiva urgente desde la inspeccion."
@@ -272,7 +279,7 @@ rules:
   - key: maintenance-inspection-defect
     event: maintenance.inspection.created
     when: "payload.result == 'MAJOR_DEFECT' or payload.result == 'MINOR_DEFECT'"
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "Inspeccion #{payload.code} en #{payload.assetCode}: #{payload.result == 'MAJOR_DEFECT' ? 'defecto mayor' : 'defecto menor'}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha registrado la inspeccion #{payload.code} sobre #{payload.assetCode} con resultado #{payload.result}#{payload.inspector != null ? ' (inspector ' + payload.inspector + ')' : ''}."
@@ -280,7 +287,7 @@ rules:
 
   - key: maintenance-inspection-corrective-order
     event: maintenance.inspection.corrective-order-created
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "Orden correctiva #{payload.orderCode} desde la inspeccion #{payload.code}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha generado la orden #{payload.orderType} #{payload.orderCode} (prioridad #{payload.priority}) desde la inspeccion #{payload.code} sobre #{payload.assetCode}#{payload.defectCode != null ? ', por el defecto ' + payload.defectCode : ''}."
@@ -290,7 +297,7 @@ rules:
   # dejo a medias si ya habia empezado.
   - key: maintenance-shift
     event: [maintenance.shift.started, maintenance.shift.closed, maintenance.shift.cancelled]
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "Turno #{payload.code} #{event.type == 'maintenance.shift.started' ? 'iniciado' : (event.type == 'maintenance.shift.closed' ? 'cerrado' : 'cancelado')}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'maintenance.shift.started' ? 'iniciado' : (event.type == 'maintenance.shift.closed' ? 'cerrado' : 'cancelado')} el turno #{payload.code} del #{payload.shiftDate}#{payload.teamCode != null ? ' (equipo ' + payload.teamCode + ')' : ''} en las vias #{payload.trackIds}#{event.type == 'maintenance.shift.closed' and payload.netWorkMinutes != null ? ': ' + payload.netWorkMinutes + ' minutos netos' : ''}#{event.type == 'maintenance.shift.cancelled' and payload.actualStart != null ? ', que ya habia empezado' : ''}."
@@ -310,7 +317,7 @@ rules:
   - key: maintenance-material-no-stock
     event: maintenance.material.rejected
     when: "payload.stockErrorCode == 'STK-001'"
-    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-warehouse-admin]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance, PROFILE:mto-warehouse-admin]
     channels: [inbox]
     title: "Sin existencias de #{payload.materialCode} para la orden #{payload.orderCode}"
     body: "El almacen no tiene #{payload.plannedQuantity} #{payload.unit} de #{payload.materialCode}#{payload.materialDescription != null ? ' (' + payload.materialDescription + ')' : ''} para la orden #{payload.orderCode}: #{payload.reason}"
@@ -319,7 +326,7 @@ rules:
   - key: maintenance-material-rejected
     event: maintenance.material.rejected
     when: "payload.stockErrorCode != 'STK-001'"
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "El almacen rechaza #{payload.materialCode} de la orden #{payload.orderCode}"
     body: "mto-stock ha rechazado #{payload.step} de #{payload.materialCode} para la orden #{payload.orderCode}#{payload.stockErrorCode != null ? ' (' + payload.stockErrorCode + ')' : ''}: #{payload.reason}"
@@ -327,7 +334,7 @@ rules:
 
   - key: maintenance-material-stock-unavailable
     event: [maintenance.material.failed, maintenance.material.in-doubt]
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "El almacen no responde: #{payload.materialCode} de la orden #{payload.orderCode}"
     body: "mto-stock no ha contestado a #{payload.step} de #{payload.materialCode} para la orden #{payload.orderCode}#{event.type == 'maintenance.material.in-doubt' ? ' y la peticion ' + payload.request + ' queda en duda' : ''}. Se reintenta solo cada cinco minutos; la linea tambien se puede sincronizar a mano."
@@ -338,7 +345,7 @@ rules:
 
   - key: maintenance-asset-disabled
     event: maintenance.asset.disabled
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "Activo #{payload.code} desactivado en mantenimiento"
     body: "#{event.actorUsername ?: 'Un proceso'} ha desactivado el activo #{payload.code} (#{payload.name}, #{payload.type})#{payload.sourceService != null ? ', sincronizado desde ' + payload.sourceService + ': sigue desactivado aunque el origen lo reactive, hasta que alguien lo reactive aqui' : ''}."
@@ -346,7 +353,7 @@ rules:
 
   - key: maintenance-preventive-due-soon
     event: maintenance.preventive.due-soon
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox, email]
     title: "#{payload.count} preventivos vencen en #{payload.horizonDays} dias#{payload.overdueCount > 0 ? ' (' + payload.overdueCount + ' ya vencidos)' : ''}"
     body: "A #{payload.date} hay #{payload.count} activos con el preventivo a vencer en los proximos #{payload.horizonDays} dias, #{payload.overdueCount} de ellos ya vencidos o nunca revisados. Los primeros: #{payload.assets.![assetCode]}."
@@ -373,7 +380,7 @@ rules:
     event: [stock.reservation.cancelled, stock.reservation.released]
     when: "payload.createdBy == vars['maintenance-service-account'] and event.actorUsername != vars['maintenance-service-account']"
     severity: WARNING
-    audiences: [PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox, email]
     title: "Reserva de mantenimiento #{event.type == 'stock.reservation.cancelled' ? 'cancelada' : 'liberada'}: #{payload.materialCode} para #{payload.projectCode}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'stock.reservation.cancelled' ? 'cancelado' : 'liberado'} en el almacen la reserva de #{payload.quantity} #{payload.unit} de #{payload.materialCode} para #{payload.projectCode} que habia hecho mantenimiento (#{payload.createdBy}). La linea de material de su orden se queda sin reserva: conviene sincronizarla."
@@ -397,7 +404,7 @@ rules:
 
   - key: field-possession-opened
     event: field.possession.opened
-    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "Posesion #{payload.code} abierta"
     body: "#{event.actorUsername ?: 'Un proceso'} ha abierto la posesion #{payload.code} del #{payload.shiftDate} con #{payload.shiftCount} turno(s) (equipos #{payload.teamCodes}), hasta #{payload.endsAt}."
@@ -405,7 +412,7 @@ rules:
 
   - key: field-possession-closed
     event: field.possession.closed
-    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "Posesion #{payload.code} #{payload.forced == true ? 'cerrada a la fuerza' : 'cerrada'}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha cerrado la posesion #{payload.code} del #{payload.shiftDate}#{payload.forced == true ? ' a la fuerza, con equipos aun en la via: ' + payload.pendingTeams : ', con todos los equipos fuera de la via'}#{payload.closeReason != null ? '. Motivo: ' + payload.closeReason : ''}."
@@ -414,7 +421,7 @@ rules:
   - key: field-evacuation-issued
     event: field.possession.evacuation-issued
     severity: CRITICAL
-    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox, email]
     title: "Desalojo de la via ordenado en la posesion #{payload.code}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha ordenado el desalojo de la via en la posesion #{payload.code} (orden #{payload.sequence}) a los equipos #{payload.teamCodes}#{payload.reason != null ? ': ' + payload.reason : ''}. Cada equipo tiene que acusar la orden."
@@ -424,7 +431,7 @@ rules:
     event: field.possession.evacuation-acknowledged
     when: "payload.accepted == false"
     severity: CRITICAL
-    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox, email]
     title: "El equipo #{payload.teamCode} no puede desalojar la via (posesion #{payload.code})"
     body: "#{event.actorUsername ?: 'Un dispositivo'} (#{payload.deviceId}) ha contestado que el equipo #{payload.teamCode} no puede desalojar la via en la posesion #{payload.code}#{payload.reason != null ? ': ' + payload.reason : ''}."
@@ -442,7 +449,7 @@ rules:
   - key: field-evacuation-unacknowledged
     event: field.possession.evacuation-unacknowledged
     severity: CRITICAL
-    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox, email]
     title: "Equipos sin acusar el desalojo en la posesion #{payload.code}: #{payload.pendingTeams}"
     body: "#{payload.overdueSeconds} segundos despues de la orden de desalojo de #{payload.issuedBy} (#{payload.issuedAt}), en la posesion #{payload.code} siguen sin acusar: #{payload.pendingTeams}."
@@ -451,7 +458,7 @@ rules:
   - key: field-all-clear
     event: field.possession.clear-of-track
     when: "payload.allClear == true"
-    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-field-supervisor, PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "Via libre en la posesion #{payload.code}"
     body: "Con la salida de #{payload.teamCode} (#{event.actorUsername ?: payload.deviceId}), todos los equipos de la posesion #{payload.code} estan fuera de la via#{payload.earthingRemoved == true ? ', con sus puestas a tierra retiradas' : ''}."
@@ -478,7 +485,7 @@ rules:
   # que queda en blanco se omite).
   - key: resources-team-deactivated
     event: resources.team.deactivated
-    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, "PROFILE:#{payload.discipline == 'MAINTENANCE' ? 'mto-maintenance-manager' : ''}"]
+    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, "PROFILE:#{payload.discipline == 'MAINTENANCE' ? 'mto-maintenance-manager' : ''}", "PROFILE:#{payload.discipline == 'MAINTENANCE' ? 'mto-position-chief-maintenance' : ''}"]
     channels: [inbox]
     title: "Equipo #{payload.code} desactivado"
     body: "#{event.actorUsername ?: 'Un proceso'} ha desactivado el equipo #{payload.code} (#{payload.name})#{payload.leader?.fullName != null ? ', de ' + payload.leader?.fullName : ''}: sus linemen quedan libres y vuelve con otros al reactivarlo."
@@ -490,7 +497,7 @@ rules:
   - key: resources-vehicle-unavailable
     event: [resources.vehicle.updated, resources.vehicle.deactivated]
     when: "payload.availabilityChanged == true and payload.available == false"
-    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-resources-manager, PROFILE:mto-resources-admin]
+    audiences: [PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance, PROFILE:mto-resources-manager, PROFILE:mto-resources-admin]
     channels: [inbox]
     title: "Vehiculo #{payload.code} #{event.type == 'resources.vehicle.deactivated' ? 'retirado' : 'no disponible'}"
     body: "#{event.actorUsername ?: 'Un proceso'} ha #{event.type == 'resources.vehicle.deactivated' ? 'retirado' : 'dejado en ' + payload.operationalStatus} el vehiculo #{payload.code} (#{payload.name}#{payload.type?.name != null ? ', ' + payload.type?.name : ''}): mientras no este disponible no entra en ningun turno."
@@ -524,7 +531,7 @@ rules:
   # o de la plataforma): a los responsables de recursos y al de mantenimiento, que monta los turnos.
   - key: resources-vehicle-document-expiring
     event: resources.vehicle-document.expiring
-    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "Documento #{payload.kind} del vehiculo #{payload.vehicleCode} a punto de caducar"
     body: "El documento #{payload.kind}#{payload.reference != null ? ' ' + payload.reference : ''} del vehiculo #{payload.vehicleCode} (#{payload.vehicleName}) caduca el #{payload.expiresOn}, #{payload.daysLeft == 0 ? 'hoy' : (payload.daysLeft == 1 ? 'manana' : 'en ' + payload.daysLeft + ' dias')}. Con el caducado, el vehiculo no entra en ningun turno: hay que renovarlo antes."
@@ -532,7 +539,7 @@ rules:
 
   - key: resources-vehicle-document-expired
     event: resources.vehicle-document.expired
-    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox, email]
     title: "Documento #{payload.kind} del vehiculo #{payload.vehicleCode} caducado"
     body: "El documento #{payload.kind}#{payload.reference != null ? ' ' + payload.reference : ''} del vehiculo #{payload.vehicleCode} (#{payload.vehicleName}) caduco el #{payload.expiresOn}: hasta que se renueve, el vehiculo no entra en ningun turno."
@@ -542,7 +549,7 @@ rules:
   # de medida): a los mismos tres.
   - key: resources-calibration-expiring
     event: resources.calibration.expiring
-    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox]
     title: "Calibracion del instrumento #{payload.code} a punto de caducar"
     body: "La calibracion del instrumento #{payload.code} (#{payload.name}, #{payload.kind}#{payload.serialNumber != null ? ', n/s ' + payload.serialNumber : ''}) caduca el #{payload.calibrationExpiresOn}, #{payload.daysLeft == 0 ? 'hoy' : (payload.daysLeft == 1 ? 'manana' : 'en ' + payload.daysLeft + ' dias')}. Con la calibracion caducada, el instrumento no entra en ningun turno: hay que calibrarlo antes."
@@ -550,7 +557,7 @@ rules:
 
   - key: resources-calibration-expired
     event: resources.calibration.expired
-    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager]
+    audiences: [PROFILE:mto-resources-manager, PROFILE:mto-resources-admin, PROFILE:mto-maintenance-manager, PROFILE:mto-position-chief-maintenance]
     channels: [inbox, email]
     title: "Calibracion del instrumento #{payload.code} caducada"
     body: "La calibracion del instrumento #{payload.code} (#{payload.name}, #{payload.kind}#{payload.serialNumber != null ? ', n/s ' + payload.serialNumber : ''}) caduco el #{payload.calibrationExpiresOn}: hasta que se calibre de nuevo, el instrumento no entra en ningun turno."

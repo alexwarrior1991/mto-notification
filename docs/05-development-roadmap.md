@@ -56,6 +56,8 @@
   o `quorum` con `app.rabbitmq.queues.type` (`ConsumerQueueProperties`, con `x-delivery-limit` 5),
   para un RabbitMQ en clúster. Con `classic` la declaración es exactamente la de antes.
 
+- **El jefe de mantenimiento como audiencia**: el perfil de puesto `mto-position-chief-maintenance`
+  recibe lo que `mto-maintenance-manager` (hasta entonces ninguna regla nombraba un `mto-position-*`).
 - **Reproceso de las DLQ**: `notification-admin` cuenta, mira y vuelve a procesar lo que hay en la DLQ
   de cada fuente (`/admin/dead-letters`), por el mismo consumidor y el mismo inbox, sin republicar nada
   ([`06-messaging.md`](06-messaging.md), *Las DLQ*).
@@ -74,6 +76,10 @@ Lo que el diseño dejaba preparado y sigue pendiente:
   del turno y usa el grupo solo en los turnos sin dotación.
 - Avisos hacia el campo (turno asignado, orden urgente en su zona): mismo vocabulario de eventos;
   solo falta el canal y la audiencia.
+- Los demás **perfiles de puesto** como audiencia (`mto-position-supervisor`, `-chief-supervisor`,
+  `-team-leader`, `-worker`, `-project-manager`): los cuatro primeros trabajan en los EP de sus
+  equipos, así que su aviso natural es por equipo o zona (el punto anterior), no por perfil; el jefe
+  de proyecto solo lee, y qué quiere recibir es una decisión de producto.
 
 ## `mto-field`
 

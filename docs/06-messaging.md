@@ -384,6 +384,23 @@ credencial. El actor es `SERVICE` cuando el cliente resuelto es `mto-users-svc`
 
 ## Las reglas de esta fase
 
+**Los perfiles de puesto.** Los `mto-position-*` de `mto-platform`
+(`keycloak/mto-positions-cross-service.json`) dicen qué puede hacer en todo el dominio quien ocupa un
+puesto de la organización de `mto-resources`, y los seis llevan `notification-inbox`, así que tienen
+bandeja. Como audiencia son un `PROFILE:` más (un rol de realm). El **jefe de mantenimiento**
+(`mto-position-chief-maintenance`) recibe todo lo que reciben los responsables de mantenimiento: donde
+la tabla dice `mto-maintenance-manager` léase también `mto-position-chief-maintenance`, con la misma
+condición y los mismos canales. Su puesto es «todo el mantenimiento», con los mismos permisos de
+`mto-maintenance-api` que ese perfil y sin límite de EP, y quien lo ocupa no lleva por fuerza el perfil
+del servicio (los puestos listan sus roles uno a uno, sin anidar perfiles); sin esto no le llegaba
+ningún aviso. `RulesConfigurationTest` exige que una regla que nombre a uno nombre al otro. Quien
+tenga los dos perfiles recibe un solo aviso y un solo correo. Los demás puestos no son audiencia de
+ninguna regla por su perfil: un supervisor, un jefe de equipo o un operario trabajan en los EP de sus
+equipos, y avisar a `PROFILE:mto-position-supervisor` sería avisar a todos los supervisores de cada
+posesión; les llega lo que va a su usuario (la orden asignada, su turno, su equipo, sus
+cualificaciones) y lo demás espera a las audiencias por equipo o zona
+([`05-development-roadmap.md`](05-development-roadmap.md), *Siguiente*).
+
 | Regla | Dispara | A quién | Canales |
 |---|---|---|---|
 | `access-login-streak` | `access.login.streak` | `mto-users-admin`, `mto-ops` | bandeja, correo; freno 30 min por dimensión y valor |

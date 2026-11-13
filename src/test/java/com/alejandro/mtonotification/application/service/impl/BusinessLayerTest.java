@@ -1611,7 +1611,7 @@ class BusinessLayerTest {
             NotificationFactory.NotificationDraft urgent = only.apply("order-created");
             assertEquals("maintenance-order-urgent", urgent.ruleKey());
             assertEquals(ActivitySeverity.CRITICAL, urgent.severity());
-            assertEquals(List.of(Audience.profile("mto-maintenance-manager")), urgent.audiences());
+            assertEquals(List.of(Audience.profile("mto-maintenance-manager"), Audience.profile("mto-position-chief-maintenance")), urgent.audiences());
             assertEquals(List.of("inbox", "email"), urgent.channels());
             assertEquals("Orden urgente MO-000124: Broken contact wire at kp 12+848", urgent.title());
             assertEquals("mantenimiento.tecnico ha abierto la orden urgente MO-000124 sobre PRF-12-2.27 (12-2.27), via 2.", urgent.body());
@@ -1626,7 +1626,7 @@ class BusinessLayerTest {
 
             NotificationFactory.NotificationDraft noStock = only.apply("material-rejected");
             assertEquals("maintenance-material-no-stock", noStock.ruleKey(), "STK-001 es falta de existencias: tambien al almacen");
-            assertEquals(List.of(Audience.profile("mto-maintenance-manager"), Audience.profile("mto-warehouse-admin")), noStock.audiences());
+            assertEquals(List.of(Audience.profile("mto-maintenance-manager"), Audience.profile("mto-position-chief-maintenance"), Audience.profile("mto-warehouse-admin")), noStock.audiences());
             assertEquals(ActivitySeverity.WARNING, noStock.severity(), "sin gravedad en la regla, la de la linea");
             assertEquals("Sin existencias de GA70 para la orden MO-000123", noStock.title());
 
@@ -1669,7 +1669,7 @@ class BusinessLayerTest {
 
             Map<String, NotificationFactory.NotificationDraft> cancelledNotices = byRule.apply("shift-cancelled");
             NotificationFactory.NotificationDraft shiftCancelled = cancelledNotices.get("maintenance-shift");
-            assertEquals(List.of(Audience.profile("mto-maintenance-manager")), shiftCancelled.audiences());
+            assertEquals(List.of(Audience.profile("mto-maintenance-manager"), Audience.profile("mto-position-chief-maintenance")), shiftCancelled.audiences());
             assertEquals(List.of("inbox"), shiftCancelled.channels());
             assertEquals(ActivitySeverity.WARNING, shiftCancelled.severity(), "sin gravedad en la regla, la de la linea");
             assertEquals("Turno SH-000077 cancelado", shiftCancelled.title());
@@ -1826,7 +1826,7 @@ class BusinessLayerTest {
             engine.evaluate(lineOf(cancelled), cancelled.payload());
             assertEquals(List.of("stock-reservation-touched-by-someone-else"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
             NotificationFactory.NotificationDraft touched = created.getFirst();
-            assertEquals(List.of(Audience.profile("mto-maintenance-manager")), touched.audiences(), "a mantenimiento, que se queda sin material");
+            assertEquals(List.of(Audience.profile("mto-maintenance-manager"), Audience.profile("mto-position-chief-maintenance")), touched.audiences(), "a mantenimiento, que se queda sin material");
             assertEquals(List.of("inbox", "email"), touched.channels());
             assertEquals("Reserva de mantenimiento cancelada: GA70 para EP-6", touched.title());
             assertTrue(touched.body().startsWith("almacen.responsable ha cancelado en el almacen la reserva de 4"), touched.body());
@@ -1998,7 +1998,7 @@ class BusinessLayerTest {
             engine.evaluate(lineOf(opened), opened.payload());
             assertEquals(List.of("field-possession-opened"), created.stream().map(NotificationFactory.NotificationDraft::ruleKey).toList());
             NotificationFactory.NotificationDraft openedNotice = created.getFirst();
-            assertEquals(List.of(Audience.profile("mto-field-supervisor"), Audience.profile("mto-maintenance-manager")), openedNotice.audiences());
+            assertEquals(List.of(Audience.profile("mto-field-supervisor"), Audience.profile("mto-maintenance-manager"), Audience.profile("mto-position-chief-maintenance")), openedNotice.audiences());
             assertEquals(List.of("inbox"), openedNotice.channels());
             assertEquals(ActivitySeverity.INFO, openedNotice.severity());
             assertEquals("Posesion PO-000012 abierta", openedNotice.title());
@@ -2239,7 +2239,7 @@ class BusinessLayerTest {
             assertEquals("Tu equipo A desactivado", deactivated.get("resources-team-changed").title());
             assertEquals("recursos.gestor ha desactivado tu equipo A (Team A): sus linemen quedan libres.", deactivated.get("resources-team-changed").body());
             NotificationFactory.NotificationDraft toTheManagers = deactivated.get("resources-team-deactivated");
-            assertEquals(List.of(Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin"), Audience.profile("mto-maintenance-manager")),
+            assertEquals(List.of(Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin"), Audience.profile("mto-maintenance-manager"), Audience.profile("mto-position-chief-maintenance")),
                     toTheManagers.audiences());
             assertEquals(ActivitySeverity.WARNING, toTheManagers.severity(), "sin gravedad en la regla, la de la baja");
             assertEquals("Equipo A desactivado", toTheManagers.title());
@@ -2254,7 +2254,7 @@ class BusinessLayerTest {
             Map<String, NotificationFactory.NotificationDraft> outOfService = fired.apply(fixture("contracts/mto-resources/vehicle-updated.json"));
             assertEquals(List.of("resources-vehicle-unavailable"), List.copyOf(outOfService.keySet()));
             NotificationFactory.NotificationDraft unavailable = outOfService.get("resources-vehicle-unavailable");
-            assertEquals(List.of(Audience.profile("mto-maintenance-manager"), Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin")),
+            assertEquals(List.of(Audience.profile("mto-maintenance-manager"), Audience.profile("mto-position-chief-maintenance"), Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin")),
                     unavailable.audiences());
             assertEquals(ActivitySeverity.WARNING, unavailable.severity());
             assertEquals("Vehiculo RR-07 no disponible", unavailable.title());
@@ -2375,7 +2375,7 @@ class BusinessLayerTest {
             };
             List<Audience> resourcesManagers = List.of(Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin"));
             List<Audience> fleetManagers = List.of(Audience.profile("mto-resources-manager"), Audience.profile("mto-resources-admin"),
-                    Audience.profile("mto-maintenance-manager"));
+                    Audience.profile("mto-maintenance-manager"), Audience.profile("mto-position-chief-maintenance"));
 
             // Una cualificacion a punto de caducar: a la persona, al jefe de su equipo y a los responsables de recursos.
             Map<String, NotificationFactory.NotificationDraft> qualificationExpiring = fired.apply(fixture("contracts/mto-resources/qualification-expiring.json"));
