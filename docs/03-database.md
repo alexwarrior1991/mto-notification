@@ -32,7 +32,7 @@ porque la migración no usa el valor nuevo), `activity_severity` (`INFO`,
 | Tabla | Para qué | Lo que la sostiene |
 |---|---|---|
 | `inbox_message` | Copia del de `mto-maintenance`; sirve a RabbitMQ **y** al lector de Keycloak | `unique (message_id, source_service)`; `payload` es `json` (los bytes tal cual, para la firma); índices por estado y `received_at` (la purga) y por fuente y estado (la vista de administración y los reintentos del lector de Keycloak, que salen de `status = FAILED`, `processing_attempts` y `failed_at`); lo aplicado se purga a los 7 días y lo `FAILED` a los 30 |
-| `activity_event` | El registro: `seq` (`identity`, orden de llegada), origen, `category`, `type`, `severity`, `occurred_at`, `recorded_at`, actor, sujeto, `correlation_id`, `ip_address inet`, `event_count`, `payload jsonb`, `superseded_by` | `unique (source_service, source_event_id)` = **la** idempotencia; `check` de IP solo en `ACCESS`, de la forma del tipo (`^[a-z0-9-]+(\.[a-z0-9-]+)+$`) y de `event_count >= 1`; índices `(category, occurred_at desc)`, `(type, occurred_at desc)`, `(actor_username, occurred_at desc)`, `(subject_type, subject_id, occurred_at desc)`, parcial `(ip_address, occurred_at desc) where category = 'ACCESS'` y `(category, recorded_at)` para la purga |
+| `activity_event` | El registro: `seq` (`identity`, orden de llegada), origen, `category`, `type`, `severity`, `occurred_at`, `recorded_at`, actor, sujeto, `correlation_id`, `ip_address inet`, `event_count`, `payload jsonb`, `superseded_by` | `unique (source_service, source_event_id)` = **la** idempotencia; `check` de IP solo en `ACCESS`, de la forma del tipo (`^[a-z0-9-]+(\.[a-z0-9-]+)+$`) y de `event_count >= 1`; índices `(category, occurred_at desc)`, `(type, occurred_at desc)`, `(actor_username, occurred_at desc)`, `(subject_type, subject_id, occurred_at desc)`, parcial `(ip_address, occurred_at desc) where category = 'ACCESS'`, `(category, recorded_at)` para la purga y, desde `V4`, parcial `(superseded_by) where superseded_by is not null` (ver abajo) |
 | `activity_burst` | Ráfagas de datos maestros: `burst_key`, `status`, entidad, operación, actor, `correlation_id`, `event_count`, `sample_ids jsonb`, `opened_at`, `last_event_at`, `closed_at` | Índice único parcial `(burst_key) where status = 'OPEN'`: destino del upsert y lo que hace que solo un cerrador gane; parciales por `last_event_at` de las abiertas y `closed_at` de las cerradas |
 | `notification` | `rule_key` (`manual-broadcast`, `test-email` en las manuales), `activity_event_id` (`on delete set null`), `category`, `severity`, `title`, `body`, `link`, sujeto | `(created_at desc, id desc)`, `(activity_event_id)` |
 | `notification_audience` | `kind` y `audience_key` (`USER:alice`, `USER_ID:<id de Keycloak>`, `PROFILE:mto-ops`, `CLIENT_ROLE:mto-stock-api:stock-read`), `created_at` desnormalizado | `pk (notification_id, audience_key)`; `(audience_key, created_at desc, notification_id desc)` para la bandeja con claves estrechas |
@@ -46,3 +46,24 @@ Todo lo que cuelga de `notification` (audiencias, recibos, entregas) va `on dele
 purga de notificaciones se lleva lo suyo. `activity_event` no tiene hijos que cuelguen de ella
 salvo el `superseded_by` de otro evento y el `activity_event_id` de una notificación, los dos
 `on delete set null`.
+
+## `V4__index_activity_event_superseded_by.sql`
+
+`superseded_by` es una clave ajena de `activity_event` a sí misma con `on delete set null`, y
+PostgreSQL no indexa una clave ajena. Al borrar una línea, el trigger de integridad busca las que
+apuntan a ella (`update activity_event set superseded_by = null where superseded_by = $1`) y sin
+índice recorre el registro entero **por cada fila borrada**: la purga nocturna, que borra de mil en
+mil, se volvía cuadrática. Medido con 2.000.000 de líneas (100.000 fundidas): 380 ms por fila
+borrada, más de seis minutos por lote de mil; con `idx_activity_event_superseded_by`, 16 ms el lote
+entero. El índice es parcial (solo las líneas fundidas, unos 3 MB con esas cifras); las listas, que
+filtran `superseded_by is null`, y la actualización condicional del correlador (por `id`) no cambian
+de plan.
+
+La migración usa `create index if not exists` dentro de la transacción de Flyway, sin
+`concurrently`, porque la tabla es pequeña hoy. Sobre un registro ya grande ese `create index`
+bloquea las escrituras mientras dura: antes de desplegar, crearlo a mano con
+`create index concurrently if not exists idx_activity_event_superseded_by on activity_event
+(superseded_by) where superseded_by is not null;` y la migración no hará nada.
+
+Regla general: **una clave ajena hacia una tabla que se purga lleva su índice** (aquí también
+`notification.activity_event_id`, y las tres que cuelgan de `notification`).
