@@ -224,7 +224,7 @@ y en qué orden), `KeycloakEventsClientTest` (`MockRestServiceServer`),
 (controladores sonda), `ApiDocsExposureTest`, `CorrelationIdFilterTest`,
 `OpenApiDocumentationConfigurationTest`; contra PostgreSQL, `InboxMessageRepositoryDataJpaTest`,
 `ActivityRegistryDataJpaTest` (idempotencia, `CHECK`s, rachas, la fusión del evento de Keycloak con
-el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera y la de un trabajo que pasa de los diez minutos sin partirse, frenos, arrendamiento y su renovación, los fallidos del inbox a los que les toca reintento, purga (también la de los `FAILED`), las líneas de campo y de recursos guardadas, consultadas y purgadas con su categoría, y cada enumerado de Java con los valores de su tipo de PostgreSQL) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
+el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera y la de un trabajo que pasa de los diez minutos sin partirse, frenos, arrendamiento y su renovación, los fallidos del inbox a los que les toca reintento, purga (también la de los `FAILED`), las líneas de campo y de recursos guardadas, consultadas y purgadas con su categoría, cada enumerado de Java con los valores de su tipo de PostgreSQL, y el índice parcial de `superseded_by` (`V4`: una clave ajena hacia una tabla que se purga lleva su índice, o cada fila borrada recorre la tabla entera)) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
 entregas), los tres `@DataJpaTest` que recogen los servicios package-private con una
 `@TestConfiguration` anidada y `@ComponentScan` por nombre; `MtoNotificationApplicationTests`
 (contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean;

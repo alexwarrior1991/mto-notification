@@ -638,6 +638,31 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
     // --- soporte ---
 
     /** Un mensaje que fallo {@code attempts} veces, la ultima hace {@code ago}. */
+    /**
+     * {@code superseded_by} es una clave ajena a la propia tabla con {@code ON DELETE SET NULL}: sin su
+     * indice, borrar una linea recorre el registro entero buscando las que apuntan a ella, y la purga
+     * lo hace por cada fila. Es parcial, solo de las lineas fundidas.
+     */
+    @Test
+    void theSelfReferenceOfSupersededLinesHasItsPartialIndexAndDeletingTheSupersedingLineFreesTheOther() {
+        List<String> definitions = stringsOf(entityManager.createNativeQuery(
+                "select indexdef from pg_indexes where schemaname = current_schema() "
+                        + "and tablename = 'activity_event' and indexname = 'idx_activity_event_superseded_by'").getResultList());
+        assertEquals(1, definitions.size(), "V4 crea idx_activity_event_superseded_by");
+        String definition = definitions.getFirst().toLowerCase();
+        assertTrue(definition.contains("(superseded_by)"), definition);
+        assertTrue(definition.contains("where (superseded_by is not null)"), definition);
+
+        String token = UUID.randomUUID().toString();
+        ActivityEvent superseded = activityIngestor.ingest(systemLine("old-" + token)).orElseThrow();
+        ActivityEvent superseding = activityIngestor.ingest(systemLine("new-" + token)).orElseThrow();
+        assertEquals(1, activityEventRepository.supersede(superseded.getId(), superseding.getId()));
+
+        entityManager.createNativeQuery("delete from activity_event where id = :id").setParameter("id", superseding.getId()).executeUpdate();
+
+        assertNull(reload(superseded.getId()).getSupersededBy(), "ON DELETE SET NULL: la linea fundida sobrevive, sin referencia");
+    }
+
     private void failedInbox(String source, String messageId, int attempts, String ago) {
         for (int attempt = 0; attempt < attempts; attempt++) {
             inboxMessageRepository.recordFailure(messageId, source, "LOGIN", "user", "u", null, null, null, "h",
@@ -646,6 +671,15 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
         entityManager.createNativeQuery("update inbox_message set failed_at = now() - cast(:ago as interval) "
                         + "where message_id = :messageId and source_service = :source")
                 .setParameter("ago", ago).setParameter("messageId", messageId).setParameter("source", source).executeUpdate();
+    }
+
+    private static ActivityEventDraft systemLine(String sourceEventId) {
+        return ActivityEventDraft.builder()
+                .source("idx-test", sourceEventId)
+                .type(ActivityTypes.SYSTEM_BROADCAST)
+                .occurredAt(Instant.now())
+                .actor(Actor.system())
+                .build();
     }
 
     private static ActivityEventDraft failedLogin(String username, String ip, String fingerprint, Instant at) {
