@@ -30,9 +30,20 @@ backoffice), `subjectType`, `subjectId`, `activityEventId`, `createdAt`, `read`,
 
 | Método y ruta | Respuesta |
 |---|---|
-| `GET /activity?category=&type=&actorUsername=&subjectType=&subjectId=&severity=&sourceService=&from=&to=&includeSuperseded=` | `PageResponse<ActivityEventResponse>` sin `payload`; `category=ACCESS` es 400 `VAL-001`. `sort` admite `occurredAt`, `recordedAt`, `severity`, `type`, `seq` |
+| `GET /activity?category=&type=&actorUsername=&subjectType=&subjectId=&severity=&sourceService=&from=&to=&includeSuperseded=` | `PageResponse<ActivityEventResponse>` sin `payload`; `category=ACCESS` es 400 `VAL-001`. `sort` admite `occurredAt`, `recordedAt`, `severity`, `type`, `seq`; sin `sort`, `seq,desc` |
 | `GET /activity/{id}` | El evento con su `payload`; 404 `ACT-404` si no existe o es un acceso |
-| `GET /access?username=&ipAddress=&type=&outcome=&from=&to=` | `PageResponse<AccessEventResponse>` con `username`, `userId`, `ipAddress` y `outcome` (`SUCCESS`/`FAILURE`: fallos, rachas, bloqueos). `ipAddress` es un literal IPv4 o IPv6, que se lee sin consultar el DNS (`InetAddress.ofLiteral`): un nombre, también uno de letras hexadecimales como `dead.beef`, o un cuarteto fuera de rango es 400 `VAL-001` |
+| `GET /access?username=&ipAddress=&type=&outcome=&from=&to=` | `PageResponse<AccessEventResponse>` con `username`, `userId`, `ipAddress` y `outcome` (`SUCCESS`/`FAILURE`: fallos, rachas, bloqueos). `ipAddress` es un literal IPv4 o IPv6, que se lee sin consultar el DNS (`InetAddress.ofLiteral`): un nombre, también uno de letras hexadecimales como `dead.beef`, o un cuarteto fuera de rango es 400 `VAL-001`. El mismo `sort` que el registro, y sin él, `seq,desc` |
+
+**El orden por defecto del registro y de los accesos es `seq,desc`** (el orden en que este servicio
+guardó cada línea, la más reciente primero). Hasta la `V5` era `occurredAt,desc`. Cambió porque
+`seq` es el orden que ya mandan las dos aplicaciones web y el único que un índice da ya ordenado para
+cualquier filtro: por `occurredAt` y sin categoría, el registro (todo lo que no es `ACCESS`) no tiene
+índice que lo ordene, y cada página era recorrerlo y ordenarlo entero (245 ms con 2.000.000 de
+líneas; 0,03 ms por `seq`). Los dos órdenes solo difieren en las líneas que llegaron tarde (un
+evento reintentado, el solape del lector de Keycloak); quien quiera el de antes lo pide con
+`sort=occurredAt,desc`, que sigue admitido como los demás. Los filtros de texto no distinguen
+mayúsculas en lo que se pide (`type`, `actorUsername`, `subjectType`, `sourceService`). El total de
+cada página (`totalElements`) sigue siendo un `count` de todo lo que cumple el filtro.
 
 `ActivityEventResponse`: `id`, `seq`, `sourceService`, `sourceEventId`, `category`, `type`,
 `severity`, `occurredAt`, `recordedAt`, `actor{kind, username, id}`, `subject{type, id, label}`,

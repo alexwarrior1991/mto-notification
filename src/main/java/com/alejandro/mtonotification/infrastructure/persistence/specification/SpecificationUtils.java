@@ -3,6 +3,7 @@ package com.alejandro.mtonotification.infrastructure.persistence.specification;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.time.Instant;
+import java.util.Locale;
 
 /** Lo que comparten los filtros: un valor ausente no filtra. */
 final class SpecificationUtils {
@@ -35,6 +36,19 @@ final class SpecificationUtils {
             return alwaysTrue();
         }
         return (root, query, builder) -> builder.equal(builder.lower(root.get(attribute)), normalized.toLowerCase());
+    }
+
+    /**
+     * Para una columna que SIEMPRE se guarda en minusculas: se compara la columna tal cual con el
+     * parametro en minusculas, que da lo mismo que {@code lower(col) = ?} y, a diferencia de el, deja
+     * usar el indice de la columna. Con {@link #equalsIgnoreCase} el indice no sirve.
+     */
+    static <T> Specification<T> equalsLowerCased(String attribute, String value) {
+        String normalized = normalize(value);
+        if (normalized == null) {
+            return alwaysTrue();
+        }
+        return (root, query, builder) -> builder.equal(root.get(attribute), normalized.toLowerCase(Locale.ROOT));
     }
 
     static <T> Specification<T> between(String attribute, Instant from, Instant to) {

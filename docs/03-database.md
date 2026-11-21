@@ -32,7 +32,7 @@ porque la migración no usa el valor nuevo), `activity_severity` (`INFO`,
 | Tabla | Para qué | Lo que la sostiene |
 |---|---|---|
 | `inbox_message` | Copia del de `mto-maintenance`; sirve a RabbitMQ **y** al lector de Keycloak | `unique (message_id, source_service)`; `payload` es `json` (los bytes tal cual, para la firma); índices por estado y `received_at` (la purga) y por fuente y estado (la vista de administración y los reintentos del lector de Keycloak, que salen de `status = FAILED`, `processing_attempts` y `failed_at`); lo aplicado se purga a los 7 días y lo `FAILED` a los 30 |
-| `activity_event` | El registro: `seq` (`identity`, orden de llegada), origen, `category`, `type`, `severity`, `occurred_at`, `recorded_at`, actor, sujeto, `correlation_id`, `ip_address inet`, `event_count`, `payload jsonb`, `superseded_by` | `unique (source_service, source_event_id)` = **la** idempotencia; `check` de IP solo en `ACCESS`, de la forma del tipo (`^[a-z0-9-]+(\.[a-z0-9-]+)+$`) y de `event_count >= 1`; índices `(category, occurred_at desc)`, `(type, occurred_at desc)`, `(actor_username, occurred_at desc)`, `(subject_type, subject_id, occurred_at desc)`, parcial `(ip_address, occurred_at desc) where category = 'ACCESS'`, `(category, recorded_at)` para la purga y, desde `V4`, parcial `(superseded_by) where superseded_by is not null` (ver abajo) |
+| `activity_event` | El registro: `seq` (`identity`, orden de llegada), origen, `category`, `type`, `severity`, `occurred_at`, `recorded_at`, actor, sujeto, `correlation_id`, `ip_address inet`, `event_count`, `payload jsonb`, `superseded_by` | `unique (source_service, source_event_id)` = **la** idempotencia; `check` de IP solo en `ACCESS`, de la forma del tipo (`^[a-z0-9-]+(\.[a-z0-9-]+)+$`) y de `event_count >= 1`; índices `(category, occurred_at desc)`, `(type, occurred_at desc)`, `(actor_username, occurred_at desc)`, `(subject_type, subject_id, occurred_at desc)`, parcial `(ip_address, occurred_at desc) where category = 'ACCESS'`, `(category, recorded_at)` para la purga y, desde `V4`, parcial `(superseded_by) where superseded_by is not null` y, desde `V5`, de expresión `(lower(actor_username), seq desc)` (ver abajo) |
 | `activity_burst` | Ráfagas de datos maestros: `burst_key`, `status`, entidad, operación, actor, `correlation_id`, `event_count`, `sample_ids jsonb`, `opened_at`, `last_event_at`, `closed_at` | Índice único parcial `(burst_key) where status = 'OPEN'`: destino del upsert y lo que hace que solo un cerrador gane; parciales por `last_event_at` de las abiertas y `closed_at` de las cerradas |
 | `notification` | `rule_key` (`manual-broadcast`, `test-email` en las manuales), `activity_event_id` (`on delete set null`), `category`, `severity`, `title`, `body`, `link`, sujeto | `(created_at desc, id desc)`, `(activity_event_id)` |
 | `notification_audience` | `kind` y `audience_key` (`USER:alice`, `USER_ID:<id de Keycloak>`, `PROFILE:mto-ops`, `CLIENT_ROLE:mto-stock-api:stock-read`), `created_at` desnormalizado | `pk (notification_id, audience_key)`; `(audience_key, created_at desc, notification_id desc)` para la bandeja con claves estrechas |
@@ -67,3 +67,47 @@ bloquea las escrituras mientras dura: antes de desplegar, crearlo a mano con
 
 Regla general: **una clave ajena hacia una tabla que se purga lleva su índice** (aquí también
 `notification.activity_event_id`, y las tres que cuelgan de `notification`).
+
+## `V5__index_activity_event_actor_lower.sql`
+
+Los filtros de texto de las listas (`/activity`, `/access`) no distinguen mayúsculas en lo que se
+pide. Hasta aquí todos comparaban `lower(columna) = ?`, y un índice sobre la columna tal cual no
+sirve a esa expresión: cada búsqueda recorría la categoría entera. Qué se hizo con cada columna, y
+por qué:
+
+| Columna | Qué puede guardar | Cómo se compara | Índice que lo sirve |
+|---|---|---|---|
+| `type` | Siempre minúsculas: `chk_activity_event_type_shape` | `type = lower(?)` | `(type, occurred_at desc)` de `V1` |
+| `subject_type` | Siempre minúsculas: es el `entityName` que normalizan `DomainEventReader` y `MasterDataSourceAdapter`, o un literal de este servicio (`user`, `session`, `realm-resource`, `job`, `source`, `delivery`, `email`, `broadcast`, `ip`) | `subject_type = lower(?)` | `(subject_type, subject_id, occurred_at desc)` de `V1` |
+| `actor_username` | **Puede llevar mayúsculas**: un acceso fallido guarda el usuario tal como se tecleó (`details.username` de Keycloak), y el de una cuenta de servicio lleva su `clientId` | `lower(actor_username) = lower(?)`, como antes | `idx_activity_event_actor_lower_seq`, `(lower(actor_username), seq desc)`, nuevo |
+| `source_service` | Pocos valores distintos | `lower(source_service) = lower(?)`, como antes | Ninguno: no lo merece |
+
+Quien añada un adaptador que escriba un `subject_type` que no salga de `DomainEventReader` lo escribe
+en minúsculas: el filtro ya no lo encontraría de otro modo.
+
+La segunda columna del índice nuevo es `seq desc` porque ese es el orden de las listas (el de por
+defecto desde este cambio, `docs/04-rest-api.md`): la página de un usuario sale del índice ya
+ordenada. `(actor_username, occurred_at desc)` de `V1` se queda: lo usan, con igualdad directa, el
+detector de rachas y el correlador. Medido en PostgreSQL 16 con 2.000.000 de líneas:
+
+| Consulta | Antes | Después |
+|---|---|---|
+| `/access?username=` de un usuario con 40 accesos, página | 345 ms (712.481 filas descartadas) | 0,11 ms |
+| su `count` | 298 ms (recorrido completo) | 0,10 ms |
+| `/activity?actorUsername=` (5.000 líneas), página / `count` | 3,5 ms / 251 ms | 0,11 ms / 9 ms |
+| `/activity?type=` de un tipo raro, página / `count` | 894 ms / 294 ms | 0,04 ms / 0,01 ms |
+| `/activity?subjectType=&subjectId=`, página / `count` | 155 ms / 153 ms | 0,02 ms / 0,01 ms |
+| `/activity` sin filtros ni `sort`, página | 245 ms (ordenar todo) | 0,03 ms (`seq`) |
+
+Lo que sigue igual: `sort=occurredAt,desc` pedido a mano junto con `username` recorre la categoría
+(369 ms con esas cifras), y el `count` de una lista sin filtros recorre todo lo que cumple.
+
+Como `V4`, usa `create index if not exists` sin `concurrently`; sobre un registro ya grande (unos
+2 s de bloqueo de escrituras por cada 2.000.000 de líneas, 60 MB) se crea antes a mano con
+`create index concurrently if not exists idx_activity_event_actor_lower_seq on activity_event
+(lower(actor_username), seq desc);`.
+
+`idx_inbox_message_received_at` **no se quita**: parece redundante con `(status, received_at)`, pero
+el planificador lo elige hoy para la purga de lo aplicado (casi todo el inbox está `PROCESSED`). Sin
+él la purga usa `(status, received_at)` con el mismo tiempo (0,40 ms el lote de mil sobre 400.000
+mensajes), así que quitarlo sería seguro; queda pendiente de decidirlo.

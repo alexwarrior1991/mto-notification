@@ -28,6 +28,8 @@ import com.alejandro.mtonotification.infrastructure.persistence.entity.SourceKin
 import com.alejandro.mtonotification.infrastructure.persistence.specification.ActivityEventSpecification;
 import com.alejandro.mtonotification.support.PostgreSQLTestContainer;
 import jakarta.persistence.EntityManager;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -93,7 +95,8 @@ import static org.mockito.Mockito.verify;
         "app.keycloak.base-url=http://keycloak:8080",
         "app.keycloak.realm=mto",
         "app.keycloak.client-registration-id=mto-services",
-        "app.keycloak.events.lease-ttl=PT2M"
+        "app.keycloak.events.lease-ttl=PT2M",
+        "spring.jpa.properties.hibernate.generate_statistics=true"
 })
 class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
 
@@ -671,6 +674,56 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
         entityManager.createNativeQuery("update inbox_message set failed_at = now() - cast(:ago as interval) "
                         + "where message_id = :messageId and source_service = :source")
                 .setParameter("ago", ago).setParameter("messageId", messageId).setParameter("source", source).executeUpdate();
+    }
+
+    /**
+     * Los filtros de texto del registro dan lo mismo sin distinguir mayusculas en lo que se pide, y
+     * cada uno puede usar su indice: el tipo y el tipo de sujeto, siempre en minusculas en la base, se
+     * comparan con la columna tal cual; el usuario, que un acceso fallido guarda como se tecleo, con
+     * {@code lower(actor_username)}, que es la expresion del indice de V5.
+     */
+    @Test
+    void theTextFiltersIgnoreTheCaseOfWhatIsAskedAndCompareWhatTheirIndexesHold() {
+        String token = UUID.randomUUID().toString().substring(0, 8);
+        Instant now = Instant.now();
+        activityIngestor.ingest(failedLogin("Carol-" + token, "10.9.0.1", "case-1-" + token, now.minusSeconds(20)));
+        activityIngestor.ingest(failedLogin("carol-" + token, "10.9.0.1", "case-2-" + token, now.minusSeconds(10)));
+        activityIngestor.ingest(ActivityEventDraft.builder().source("mto-configuration", "case-3-" + token).type("configuration.track.deleted")
+                .occurredAt(now).actor(Actor.person("dave-" + token, "u4")).subject(Subject.of("track", "t-" + token, "Via")).build());
+
+        assertEquals(2, activityEventRepository.count(ActivityEventSpecification.actorUsernameEquals("CAROL-" + token)), "el usuario, sin distinguir mayusculas");
+        assertEquals(2, activityEventRepository.count(ActivityEventSpecification.actorUsernameEquals(" carol-" + token + " ")));
+        assertEquals(1, activityEventRepository.count(ActivityEventSpecification.typeEquals(" Configuration.Track.DELETED ")
+                .and(ActivityEventSpecification.subjectIdEquals("t-" + token))));
+        assertEquals(1, activityEventRepository.count(ActivityEventSpecification.subjectTypeEquals("TRACK")
+                .and(ActivityEventSpecification.subjectIdEquals("t-" + token))));
+        assertEquals(0, activityEventRepository.count(ActivityEventSpecification.subjectTypeEquals("station")
+                .and(ActivityEventSpecification.subjectIdEquals("t-" + token))));
+
+        List<String> definitions = stringsOf(entityManager.createNativeQuery(
+                "select indexdef from pg_indexes where schemaname = current_schema() "
+                        + "and tablename = 'activity_event' and indexname = 'idx_activity_event_actor_lower_seq'").getResultList());
+        assertEquals(1, definitions.size(), "V5 crea idx_activity_event_actor_lower_seq");
+        String definition = definitions.getFirst().toLowerCase();
+        assertTrue(definition.contains("(lower((actor_username)::text), seq desc)"), definition);
+
+        // Con datos de test el planificador prefiere recorrer la tabla; sin esa opcion, ensena si el
+        // indice SIRVE a la consulta que emite cada filtro (con lower() en type o subject_type no serviria).
+        entityManager.createNativeQuery("set local enable_seqscan = off").executeUpdate();
+        entityManager.createNativeQuery("set local enable_bitmapscan = off").executeUpdate();
+        assertTrue(planOf("select * from activity_event e where e.category = 'ACCESS' and lower(e.actor_username) = 'x' order by e.seq desc limit 20")
+                .contains("idx_activity_event_actor_lower_seq"));
+        Statistics statistics = entityManager.getEntityManagerFactory().unwrap(SessionFactory.class).getStatistics();
+        statistics.clear();
+        activityEventRepository.count(ActivityEventSpecification.typeEquals("a.b"));
+        activityEventRepository.count(ActivityEventSpecification.subjectTypeEquals("a"));
+        activityEventRepository.count(ActivityEventSpecification.actorUsernameEquals("a"));
+        List<String> emitted = List.of(statistics.getQueries());
+        assertEquals(1, emitted.stream().filter(query -> query.contains("lower(")).count(), "solo el usuario compara con lower(): " + emitted);
+    }
+
+    private String planOf(String sql) {
+        return String.join("\n", stringsOf(entityManager.createNativeQuery("explain " + sql).getResultList()));
     }
 
     private static ActivityEventDraft systemLine(String sourceEventId) {
