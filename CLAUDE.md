@@ -202,6 +202,11 @@ totalPages, first, last}}` vía `PageMapper`; un `sort` desconocido es 400 `REQ-
 - **Lo que corre solo se apaga en los tests** (`application-test.yml`: lector, despachador, cierre
   de ráfagas, purga, correo) y cada test enciende lo que prueba llamándolo. `MtoNotificationApplicationTests`
   y `KeycloakEventsIT` ponen esas properties a mano porque corren con el perfil por defecto.
+- **El registro y los accesos se listan por `seq,desc` si no se pide otro orden**, y un filtro de texto
+  sobre el registro compara lo que su índice guarda (`docs/03-database.md`, `V5`): `type` y
+  `subject_type` están siempre en minúsculas y se comparan con la columna tal cual; el usuario, con
+  `lower(actor_username)`. Un `lower(columna)` nuevo en un filtro sin su índice de expresión es
+  recorrer el registro entero.
 - **El `X-Correlation-Id`** lo pone `CorrelationIdFilter` en el MDC y en cada error; es la referencia
   que ata una línea del registro a la petición que la causó.
 
@@ -224,7 +229,7 @@ y en qué orden), `KeycloakEventsClientTest` (`MockRestServiceServer`),
 (controladores sonda), `ApiDocsExposureTest`, `CorrelationIdFilterTest`,
 `OpenApiDocumentationConfigurationTest`; contra PostgreSQL, `InboxMessageRepositoryDataJpaTest`,
 `ActivityRegistryDataJpaTest` (idempotencia, `CHECK`s, rachas, la fusión del evento de Keycloak con
-el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera y la de un trabajo que pasa de los diez minutos sin partirse, frenos, arrendamiento y su renovación, los fallidos del inbox a los que les toca reintento, purga (también la de los `FAILED`), las líneas de campo y de recursos guardadas, consultadas y purgadas con su categoría, cada enumerado de Java con los valores de su tipo de PostgreSQL, y el índice parcial de `superseded_by` (`V4`: una clave ajena hacia una tabla que se purga lleva su índice, o cada fila borrada recorre la tabla entera)) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca,
+el de `mto-users` en los dos órdenes, ráfagas con su cierre en carrera y la de un trabajo que pasa de los diez minutos sin partirse, frenos, arrendamiento y su renovación, los fallidos del inbox a los que les toca reintento, purga (también la de los `FAILED`), las líneas de campo y de recursos guardadas, consultadas y purgadas con su categoría, cada enumerado de Java con los valores de su tipo de PostgreSQL, y el índice parcial de `superseded_by` (`V4`: una clave ajena hacia una tabla que se purga lleva su índice, o cada fila borrada recorre la tabla entera), y los filtros de texto del registro con el índice que usa cada uno (`V5`: `type` y `subject_type`, siempre en minúsculas, se comparan directos; el usuario, con `lower(actor_username)`, la expresión de su índice)) y `NotificationInboxDataJpaTest` (factoría, bandeja, recibos, marca, el contador de la campana, que cuenta ids sin cargar notificaciones,
 entregas), los tres `@DataJpaTest` que recogen los servicios package-private con una
 `@TestConfiguration` anidada y `@ComponentScan` por nombre; `MtoNotificationApplicationTests`
 (contexto completo contra un PostgreSQL real, sin mocks: cada servicio nuevo añade aquí su bean;

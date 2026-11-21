@@ -19,6 +19,7 @@ import com.alejandro.mtonotification.infrastructure.persistence.repository.Notif
 import com.alejandro.mtonotification.infrastructure.persistence.repository.NotificationRepository;
 import com.alejandro.mtonotification.infrastructure.persistence.specification.NotificationSpecification;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -44,6 +45,8 @@ class InboxQueryServiceImpl implements InboxQueryService {
 
     static final Set<String> SORTABLE = Set.of("createdAt", "severity", "category", "title");
     static final String AGGREGATE = "Notification";
+    /** Sin marca de «todas leidas» nada queda por debajo de ella: toda notificacion es posterior a esto. */
+    static final Instant NO_MARK = Instant.EPOCH;
 
     private final NotificationRepository notificationRepository;
     private final NotificationReceiptRepository receiptRepository;
@@ -79,9 +82,13 @@ class InboxQueryServiceImpl implements InboxQueryService {
         String username = username();
         List<String> keys = currentUser.getAudienceKeys();
         int cap = properties.inbox().unreadCountCap();
-        Specification<Notification> spec = NotificationSpecification.visibleTo(keys)
-                .and(NotificationSpecification.unreadBy(username, allReadUntil(username), true));
-        long found = notificationRepository.findBy(spec, query -> query.limit(cap + 1).all()).size();
+        if (keys.isEmpty()) {
+            return new UnreadCountResponse(0, false);
+        }
+        // Solo los ids, y como mucho cap + 1: contar no necesita cargar cada notificacion con su cuerpo.
+        Instant allReadUntil = allReadUntil(username);
+        long found = notificationRepository.findUnreadIds(keys, username,
+                allReadUntil == null ? NO_MARK : allReadUntil, Limit.of(cap + 1)).size();
         return found > cap ? new UnreadCountResponse(cap, true) : new UnreadCountResponse(found, false);
     }
 

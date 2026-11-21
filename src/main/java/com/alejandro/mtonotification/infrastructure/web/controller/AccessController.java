@@ -30,7 +30,7 @@ public class AccessController {
     private final ActivityQueryService activityQueryService;
 
     @GetMapping
-    @Operation(summary = "Search the accesses", description = "outcome=FAILURE keeps failed logins, streaks, lockouts and failed logouts; SUCCESS the rest. ipAddress must be a literal.")
+    @Operation(summary = "Search the accesses", description = "outcome=FAILURE keeps failed logins, streaks, lockouts and failed logouts; SUCCESS the rest. ipAddress must be a literal. sort admits occurredAt, recordedAt, severity, type and seq; without it, seq desc (newest recorded first).")
     public PageResponse<AccessEventResponse> search(
             @RequestParam(required = false) String username,
             @RequestParam(required = false) String ipAddress,
@@ -38,7 +38,7 @@ public class AccessController {
             @RequestParam(required = false) AccessOutcome outcome,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
-            @PageableDefault(size = 20, sort = "occurredAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = 20, sort = "seq", direction = Sort.Direction.DESC) Pageable pageable) {
         return activityQueryService.searchAccess(new AccessEventFilter(username, ipAddress, type, outcome, from, to), pageable);
     }
 }

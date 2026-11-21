@@ -33,7 +33,7 @@ public class ActivityController {
     private final ActivityQueryService activityQueryService;
 
     @GetMapping
-    @Operation(summary = "Search the log", description = "category=ACCESS is a 400: accesses have their own endpoint and permission. Superseded events are hidden unless includeSuperseded=true. sort admits occurredAt, recordedAt, severity, type and seq.")
+    @Operation(summary = "Search the log", description = "category=ACCESS is a 400: accesses have their own endpoint and permission. Superseded events are hidden unless includeSuperseded=true. sort admits occurredAt, recordedAt, severity, type and seq; without it, seq desc (newest recorded first).")
     public PageResponse<ActivityEventResponse> search(
             @RequestParam(required = false) ActivityCategory category,
             @RequestParam(required = false) String type,
@@ -45,7 +45,7 @@ public class ActivityController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
             @RequestParam(required = false, defaultValue = "false") boolean includeSuperseded,
-            @PageableDefault(size = 20, sort = "occurredAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = 20, sort = "seq", direction = Sort.Direction.DESC) Pageable pageable) {
         return activityQueryService.search(new ActivityEventFilter(category, type, actorUsername, subjectType, subjectId,
                 severity, sourceService, from, to, includeSuperseded), pageable);
     }

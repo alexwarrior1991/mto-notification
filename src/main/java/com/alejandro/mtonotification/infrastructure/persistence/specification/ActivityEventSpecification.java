@@ -23,8 +23,9 @@ public final class ActivityEventSpecification {
         return (root, query, builder) -> builder.notEqual(root.get("category"), category);
     }
 
+    /** El tipo esta siempre en minusculas (CHECK {@code chk_activity_event_type_shape}): se compara directo y usa su indice. */
     public static Specification<ActivityEvent> typeEquals(String type) {
-        return SpecificationUtils.equalsIgnoreCase("type", type);
+        return SpecificationUtils.equalsLowerCased("type", type);
     }
 
     public static Specification<ActivityEvent> typeIn(Collection<String> types) {
@@ -45,12 +46,21 @@ public final class ActivityEventSpecification {
         return SpecificationUtils.equalsValue("severity", severity);
     }
 
+    /**
+     * Sin distinguir mayusculas: un acceso fallido guarda el usuario tal como se tecleo. Lo sirve el
+     * indice de expresion {@code idx_activity_event_actor_lower_seq} (V5).
+     */
     public static Specification<ActivityEvent> actorUsernameEquals(String username) {
         return SpecificationUtils.equalsIgnoreCase("actorUsername", username);
     }
 
+    /**
+     * El tipo de sujeto esta siempre en minusculas: es el {@code entityName} que normalizan
+     * {@code DomainEventReader} y {@code MasterDataSourceAdapter}, o un literal de este servicio
+     * ({@code user}, {@code session}, {@code job}...). Se compara directo y usa el indice del sujeto.
+     */
     public static Specification<ActivityEvent> subjectTypeEquals(String subjectType) {
-        return SpecificationUtils.equalsIgnoreCase("subjectType", subjectType);
+        return SpecificationUtils.equalsLowerCased("subjectType", subjectType);
     }
 
     public static Specification<ActivityEvent> subjectIdEquals(String subjectId) {

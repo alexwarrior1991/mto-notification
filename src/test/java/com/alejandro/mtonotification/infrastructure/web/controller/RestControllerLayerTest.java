@@ -80,6 +80,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -262,6 +263,34 @@ class RestControllerLayerTest {
     }
 
     // --- accesos ---
+
+    /**
+     * Sin {@code sort}, el registro y los accesos salen por {@code seq} descendente: el orden de
+     * llegada, que es el que mandan las dos aplicaciones web y el unico que el indice de {@code seq}
+     * da ya ordenado (por {@code occurredAt} sin categoria era recorrer y ordenar el registro entero).
+     */
+    @Test
+    void withoutSortTheLogAndTheAccessesComeInArrivalOrderNewestFirst() throws Exception {
+        when(activityQueryService.search(any(), any())).thenReturn(page(List.of()));
+        when(activityQueryService.searchAccess(any(), any())).thenReturn(page(List.of()));
+
+        mockMvc.perform(get(ACTIVITY).with(role(SecurityRoles.NOTIFICATION_ACTIVITY_READ))).andExpect(status().isOk());
+        mockMvc.perform(get(ACCESS).with(role(SecurityRoles.NOTIFICATION_ACCESS_READ))).andExpect(status().isOk());
+
+        ArgumentCaptor<Pageable> log = ArgumentCaptor.forClass(Pageable.class);
+        verify(activityQueryService).search(any(), log.capture());
+        ArgumentCaptor<Pageable> access = ArgumentCaptor.forClass(Pageable.class);
+        verify(activityQueryService).searchAccess(any(), access.capture());
+        for (Pageable pageable : List.of(log.getValue(), access.getValue())) {
+            assertEquals(20, pageable.getPageSize());
+            assertEquals(List.of(Sort.Order.desc("seq")), pageable.getSort().toList());
+        }
+
+        mockMvc.perform(get(ACCESS).param("sort", "occurredAt,asc").with(role(SecurityRoles.NOTIFICATION_ACCESS_READ)))
+                .andExpect(status().isOk());
+        verify(activityQueryService, times(2)).searchAccess(any(), access.capture());
+        assertEquals(List.of(Sort.Order.asc("occurredAt")), access.getValue().getSort().toList(), "un sort pedido sigue mandando");
+    }
 
     @Test
     void theAccessesAreSearchedByUserIpAndOutcome() throws Exception {

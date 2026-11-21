@@ -27,6 +27,8 @@ import com.alejandro.mtonotification.infrastructure.persistence.entity.DeliveryS
 import com.alejandro.mtonotification.infrastructure.persistence.entity.Notification;
 import com.alejandro.mtonotification.support.PostgreSQLTestContainer;
 import jakarta.persistence.EntityManager;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,6 +59,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -82,6 +85,7 @@ import static org.mockito.Mockito.when;
 @TestPropertySource(properties = {
         "app.notification.rules-location=classpath:notification-rules.yml",
         "app.notification.inbox.unread-count-cap=2",
+        "spring.jpa.properties.hibernate.generate_statistics=true",
         "app.notification.delivery.max-attempts=3"
 })
 class NotificationInboxDataJpaTest extends PostgreSQLTestContainer {
@@ -224,6 +228,61 @@ class NotificationInboxDataJpaTest extends PostgreSQLTestContainer {
         assertEquals(new UnreadCountResponse(2, true), inboxQueryService.unreadCount());
         assertThrows(NotFoundException.class, () -> inboxQueryService.markRead(bobs.getId()));
         assertThrows(NotFoundException.class, () -> inboxQueryService.markRead(UUID.randomUUID()));
+    }
+
+    /**
+     * La campana cuenta ids: da lo mismo que contar la bandeja de no leidas (recibos, marca y tope
+     * incluidos) y no carga ninguna notificacion, ni su cuerpo, para contarlas.
+     */
+    @Test
+    void theUnreadCountIsTheOneOfTheUnreadInboxAndLoadsNoNotification() {
+        assertUnreadCountMatchesTheInbox(0);
+
+        Notification toOps = create("r", ActivitySeverity.INFO, List.of(OPS), List.of("inbox"));
+        create("r", ActivitySeverity.INFO, List.of(BOB), List.of("inbox"));
+        flushAndClear();
+        assertUnreadCountMatchesTheInbox(1);
+
+        // Dirigida a dos de mis claves: es una notificacion, no dos.
+        Notification toBoth = create("r", ActivitySeverity.INFO, List.of(OPS, ALICE), List.of("inbox"));
+        flushAndClear();
+        assertUnreadCountMatchesTheInbox(2);
+
+        inboxQueryService.markRead(toOps.getId());
+        flushAndClear();
+        assertUnreadCountMatchesTheInbox(1);
+
+        inboxQueryService.markAllRead();
+        flushAndClear();
+        assertUnreadCountMatchesTheInbox(0);
+
+        // Posteriores a la marca: vuelven a contar, y por encima del tope (2) se acota.
+        create("r", ActivitySeverity.INFO, List.of(ALICE), List.of("inbox"));
+        create("r", ActivitySeverity.INFO, List.of(OPS), List.of("inbox"));
+        create("r", ActivitySeverity.INFO, List.of(OPS), List.of("inbox"));
+        flushAndClear();
+        assertEquals(new UnreadCountResponse(2, true), inboxQueryService.unreadCount());
+        assertEquals(3, inboxQueryService.myInbox(new InboxFilter(true, null, null, null, null), PageRequest.of(0, 20)).page().totalElements());
+
+        // El recibo gana a la marca tambien al reves: una leida a mano posterior a la marca no cuenta.
+        inboxQueryService.markRead(toBoth.getId());
+        flushAndClear();
+        assertEquals(new UnreadCountResponse(2, true), inboxQueryService.unreadCount());
+
+        Statistics statistics = entityManager.getEntityManagerFactory().unwrap(SessionFactory.class).getStatistics();
+        entityManager.clear();
+        statistics.clear();
+        inboxQueryService.unreadCount();
+        assertEquals(0, statistics.getEntityStatistics(Notification.class.getName()).getLoadCount(), "contar no carga notificaciones");
+        String counting = Stream.of(statistics.getQueries()).filter(query -> query.contains("Notification n")).findFirst().orElseThrow();
+        assertTrue(counting.startsWith("select n.id from"), counting);
+    }
+
+    private void assertUnreadCountMatchesTheInbox(long expected) {
+        long unreadInInbox = inboxQueryService.myInbox(new InboxFilter(true, null, null, null, null), PageRequest.of(0, 20))
+                .page().totalElements();
+        assertEquals(expected, unreadInInbox);
+        assertEquals(new UnreadCountResponse(expected, false), inboxQueryService.unreadCount());
     }
 
     // --- las entregas ---
