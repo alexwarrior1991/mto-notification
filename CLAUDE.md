@@ -245,3 +245,11 @@ comprueba el registro, la racha, los avisos y que la segunda pasada no repite na
 `META-INF/services`) apunta cada nombre que resuelve la JVM de los tests y delega en el de la JDK.
 `support/PostgreSQLTestContainer` levanta `postgres:17-alpine` o usa
 `TEST_DATABASE_URL/USERNAME/PASSWORD`; sin ninguna de las dos cosas la clase se omite, no falla.
+**Cada clase con PostgreSQL trabaja en su propio esquema** (`test_<clase>`,
+`registerPostgreSQLProperties(registry, LaClase.class)`), que se borra y se vuelve a crear al arrancar
+su contexto y que Flyway migra entero: estos tests cuentan con las tablas vacías (la purga, las marcas
+del lector, el reclamo de entregas y los recuentos por fuente son de la tabla entera), y
+`KeycloakEventsIT` confirma lo que escribe, así que con un esquema compartido y una base fija la
+segunda ejecución fallaba. El orden de las clases no importa y `./mvnw verify` se repite sobre la
+misma base; solo se borran esquemas `test_*` que migró Flyway (uno con ese nombre que no lo sea para
+el test sin tocarlo), nunca `public`. Una consulta de catálogo en un test filtra por `current_schema()`.
