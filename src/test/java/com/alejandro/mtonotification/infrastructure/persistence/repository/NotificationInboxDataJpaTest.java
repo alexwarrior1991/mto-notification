@@ -105,7 +105,7 @@ class NotificationInboxDataJpaTest extends PostgreSQLTestContainer {
 
     @DynamicPropertySource
     static void postgreSQLProperties(DynamicPropertyRegistry registry) {
-        registerPostgreSQLProperties(registry);
+        registerPostgreSQLProperties(registry, NotificationInboxDataJpaTest.class);
     }
 
     @Autowired

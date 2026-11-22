@@ -104,7 +104,7 @@ class MtoNotificationApplicationTests extends PostgreSQLTestContainer {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registerPostgreSQLProperties(registry);
+        registerPostgreSQLProperties(registry, MtoNotificationApplicationTests.class);
     }
 
     @Autowired

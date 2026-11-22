@@ -113,7 +113,7 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
 
     @DynamicPropertySource
     static void postgreSQLProperties(DynamicPropertyRegistry registry) {
-        registerPostgreSQLProperties(registry);
+        registerPostgreSQLProperties(registry, ActivityRegistryDataJpaTest.class);
     }
 
     @Autowired
@@ -724,6 +724,23 @@ class ActivityRegistryDataJpaTest extends PostgreSQLTestContainer {
 
     private String planOf(String sql) {
         return String.join("\n", stringsOf(entityManager.createNativeQuery("explain " + sql).getResultList()));
+    }
+
+    /**
+     * La clase trabaja en su propio esquema, recien migrado: sus tablas empiezan vacias aunque otra
+     * clase (o una ejecucion anterior de {@code KeycloakEventsIT}, que confirma lo que escribe) haya
+     * dejado filas en la misma base, y por eso valen aqui los recuentos de la tabla entera.
+     */
+    @Test
+    void theClassWorksInItsOwnFreshlyMigratedSchema() {
+        assertEquals(List.of("test_activity_registry_data_jpa_test"),
+                stringsOf(entityManager.createNativeQuery("select current_schema()").getResultList()));
+        assertEquals(List.of("test_activity_registry_data_jpa_test"), stringsOf(entityManager.createNativeQuery(
+                "select table_schema from information_schema.tables where table_name = 'flyway_schema_history' "
+                        + "and table_schema = current_schema()").getResultList()), "Flyway migro este esquema, no public");
+        assertEquals(0, activityEventRepository.count(), "nada de otra clase ni de otra ejecucion");
+        assertEquals(List.of("0"), stringsOf(entityManager.createNativeQuery(
+                "select count(*) from source_cursor where last_event_time is not null or lease_owner is not null").getResultList()));
     }
 
     private static ActivityEventDraft systemLine(String sourceEventId) {

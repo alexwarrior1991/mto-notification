@@ -144,7 +144,7 @@ class KeycloakEventsIT extends PostgreSQLTestContainer {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registerPostgreSQLProperties(registry);
+        registerPostgreSQLProperties(registry, KeycloakEventsIT.class);
         registry.add("app.keycloak.base-url", KeycloakEventsIT::baseUrl);
         registry.add("app.keycloak.realm", () -> REALM);
         registry.add("spring.security.oauth2.resourceserver.jwt.issuer-uri", () -> baseUrl() + "/realms/" + REALM);
